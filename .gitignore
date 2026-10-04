@@ -1,0 +1,19 @@
+# Generated loot / run output directories
+RTEnum_*/
+CloudEnum_*/
+rtenum_*/
+adenum_*/
+cloudenum_*/
+
+# Collected secrets that may land next to the scripts
+*.json.cred
+*_role_creds.json
+*_mi_*.json
+*_token.json
+findings.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
