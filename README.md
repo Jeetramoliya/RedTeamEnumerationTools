@@ -1,10 +1,11 @@
 # Red Team Enumeration Toolkit
 
 A cross-platform set of **read-only** enumeration scripts for authorized red-team
-engagements and lab practice. It generalizes the approach of
-[`Invoke-CRTPEnum.ps1`](https://github.com/Jeetramoliya/CRTPAutomatedEnumerationScript)
-(the CRTP-lab specialist) into engagement-ready tooling for **Windows, Linux, Active
-Directory, and cloud/hybrid** — with one consistent findings model across all of them.
+engagements and lab practice, covering **Windows, Linux, Active Directory, non-AD
+directories, network/services, and cloud/hybrid** — with one consistent findings
+model across all of them. Local host triage reimplements the common
+**winPEAS / linPEAS** checks natively (no external binary to drop), and a
+patch-aware **CVE engine** reports only CVEs the host is genuinely vulnerable to.
 
 > **Authorized use only.** These scripts are for systems you own or have explicit,
 > written permission to test (pentest/red-team engagements, CTFs, your own lab).
@@ -133,6 +134,51 @@ feed-sourced rows surface as "latest actively-exploited" awareness items.
 
 ---
 
+## What the local scan covers (winPEAS / linPEAS-style, native)
+
+These checks are **reimplemented natively** — no external PEAS binary is dropped on the target.
+
+**Windows (`Invoke-RTEnum.ps1`)** — token privileges (SeImpersonate/Backup/Debug… → potato/LSASS/SAM), unquoted service paths, writable service binaries/dirs/**registry keys** (DLL hijack), AlwaysInstallElevated, scheduled tasks & autoruns, **UAC** posture, named pipes, **BYOVD** driver inventory, Defender/AppLocker/logging/LSA-PPL, saved creds (cmdkey/DPAPI/unattend/WiFi/PS-history), **WDigest cleartext**, cached-logon count, Credential Guard, Windows Vault, **PuTTY/WinSCP/FileZilla/OpenVPN/RDP** saved sessions, browser credential stores, Kerberos tickets, installed-software inventory, writable StartUp, env & recent files.
+
+**Linux (`rt-linenum.sh`)** — id/sudo/**doas**, dangerous groups (docker/lxd/disk/shadow), SUID/SGID + **GTFOBins**, capabilities, cron & timers (writable targets), writable sensitive files/PATH/systemd/ld.so, NFS `no_root_squash`, sudo **LD_PRELOAD/env_keep**, library & **wildcard injection**, container-escape surface, SSH config, readable shadow/gshadow, mail spools, backup & DB files on disk, creds in logs, **screen/tmux session hijack**, kernel-module paths, creds in histories/configs/cloud/kube.
+
+## CVE detection — only *genuinely* vulnerable CVEs
+
+The local scans match the host against [`data/cve-db.txt`](data/cve-db.txt) and report a CVE
+**only when the host is actually vulnerable** — not merely "version in range":
+
+- **Windows** (updates are cumulative): a CVE is **suppressed** if the host's latest installed
+  update is newer than the CVE's fix month. HiveNightmare and PrintNightmare are confirmed by
+  **direct tests** (SAM-hive ACL readable; Spooler + Point-and-Print state), not by build alone.
+- **Linux**: a kernel CVE is **suppressed** if the running kernel was **built after** the fix
+  month (distro backport present) or its **precondition** fails (e.g. unprivileged user
+  namespaces disabled). sudo/glibc are confirmed by exact version.
+- In-range-but-unconfirmable → `01c_cve_potential.txt` (not counted as a finding).
+  `tools/update-cve-db.*` pulls the latest actively-exploited CVEs (CISA KEV) into
+  `01d_cve_latest_feed.txt` as awareness only.
+
+Run just this: `Invoke-RTEnum -LocalOnly -Only cve` / `./rt-linenum.sh --only cve`.
+
+## Deep-scan modes & section control
+
+| Flag | Script(s) | Effect |
+|---|---|---|
+| `-Only` / `--only <keywords>` | all | run only matching sections, e.g. `--only cve,suid,creds,extended` |
+| `-Skip` / `--skip <keywords>` | all | skip matching sections |
+| *(default)* | local scans | quiet: full host triage + winPEAS/linPEAS checks + confirmed-CVE match |
+| `-HostSweep` / `-Target <host>` | `Invoke-RTEnum` | **loud** domain-wide (or scoped) local-admin / share sweep |
+| `--loud` | `net-sweep.sh` / `Invoke-RTNetScan` | full port range instead of the curated quick list |
+| `--db` | `net-sweep.sh` | active default/blank **database**-credential tests |
+| `--git` | `scan-secrets.sh` | also scan **git history** for secrets |
+| `-q` / `--quick` | `rt-linenum.sh` | skip the slow whole-filesystem SUID / world-writable walks |
+| `--no-token` | `rt-cloudenum.sh` | identify cloud only; don't fetch managed-identity tokens |
+
+Section keywords: `context, cve, system, services, privesc, deep, tasks, creds, defense,
+network, extended/peas` — Windows adds `users, computers, groups, acls, delegation, adcs,
+dcsync, gmsa, gpo, laps, spns, policy`.
+
+---
+
 ## Noise posture
 
 - **Default = quiet.** Local host checks and normal-looking LDAP only.
@@ -157,10 +203,12 @@ a tools-folder exclusion. Syntax-checking never executes anything:
 
 ---
 
-## Relationship to Invoke-CRTPEnum
+## Core loop
 
-`Invoke-CRTPEnum.ps1` remains the **CRTP-lab specialist** (phase playbook, attack-chain
-to Enterprise Admin, lab-tuned exploit commands). This toolkit is the **general-purpose,
-cross-platform** sibling: no hardcoded lab domain, explicit local/AD/cloud split, and a
-Linux + cloud reach the original didn't cover. They share the same philosophy —
-*enumerate, rank, hand you the next command, repeat as the new identity.*
+```
+enumerate  ->  read the recommended next move  ->  run its NEXT_STEPS command
+    ^                                                        |
+    |________  become the new identity, re-run  <___________|
+```
+Everything is read-only and safe to re-run on every hop. `findings.json` + the ranked
+summary make it easy to diff what new access each hop unlocked.

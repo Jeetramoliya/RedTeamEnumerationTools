@@ -155,58 +155,72 @@ if runs system kernel os; then
   has gcc && flag INFO "gcc present -> can compile kernel/local exploits on-host."
 fi
 
-# ----------------------------- known CVE matching -----------------------------
+# ----------------------------- CONFIRMED CVE matching -----------------------------
+# Only CONFIRMED vulns reach the main findings. A matched row is SUPPRESSED when:
+#   - the running kernel was BUILT after the fix month (distro backport present), or
+#   - its precondition fails (e.g. unprivileged user namespaces disabled).
+# In-range but unconfirmable -> POTENTIAL side file. Feed CVEs -> awareness side file.
 if runs cve kernel vuln; then
-  sect "Known local-privesc / kernel CVE matching (offline DB)"
-  # locate the CVE DB: --cvedb, env, alongside script, or ../data
+  sect "Confirmed local-privesc / kernel CVEs (fix-date + precondition gated)"
   SELFDIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
   CVEDB="${CVEDB:-}"
   for cand in "$CVEDB" "$SELFDIR/../data/cve-db.txt" "$SELFDIR/cve-db.txt" "$SELFDIR/data/cve-db.txt" "./data/cve-db.txt"; do
     [ -n "$cand" ] && [ -f "$cand" ] && { CVEDB="$cand"; break; }
   done
   if [ -z "$CVEDB" ] || [ ! -f "$CVEDB" ]; then
-    flag INFO "CVE DB not found (expected data/cve-db.txt) - skipping. Run tools/update-cve-db.sh to fetch it."
+    flag INFO "CVE DB not found (expected data/cve-db.txt) - run tools/update-cve-db.sh to fetch it."
   else
-    flag INFO "CVE DB: $CVEDB ($(grep -c '^linux\||^glibc\||^sudo\||^windows\|^polkit' "$CVEDB" 2>/dev/null) entries, updated $(awk -F'|' '/^updated/{print $2}' "$CVEDB"))."
     KVER=$(uname -r 2>/dev/null | grep -oE '^[0-9]+\.[0-9]+(\.[0-9]+)?')
     GVER=$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
-    SVER=$(sudo --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+p?[0-9]*' | sed 's/p[0-9]*//')
-    # vle a b -> 0 if a <= b (version-aware)
+    SVER=$(sudo --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(p[0-9]+)?')
+    # kernel build month (YYYY-MM) from uname -v, best-effort
+    KBUILD=$(date -d "$(uname -v 2>/dev/null | grep -oE '[A-Z][a-z]{2} +[0-9]{1,2} .*20[0-9]{2}' | head -1)" +%Y-%m 2>/dev/null)
+    # unprivileged user namespaces enabled? (precondition for many modern LPEs)
+    USERNS=1
+    if [ -r /proc/sys/kernel/unprivileged_userns_clone ]; then [ "$(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null)" = "0" ] && USERNS=0; fi
+    [ -r /proc/sys/user/max_user_namespaces ] && [ "$(cat /proc/sys/user/max_user_namespaces 2>/dev/null)" = "0" ] && USERNS=0
+    flag INFO "Kernel $KVER (built ${KBUILD:-unknown}), glibc ${GVER:-?}, sudo ${SVER:-?}, unpriv-userns=$([ $USERNS = 1 ] && echo on || echo off). DB updated $(awk -F'|' '/^updated/{print $2}' "$CVEDB")."
     vle(){ [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V 2>/dev/null | head -1)" = "$1" ]; }
     inrange(){ v="$1"; lo="$2"; hi="$3"; [ -z "$v" ] && return 1
       [ -n "$lo" ] && [ "$lo" != "0" ] && { vle "$lo" "$v" || return 1; }
       [ -n "$hi" ] && { vle "$v" "$hi" || return 1; }; return 0; }
-    : > "$RUN/.cvehits"; AWN=0; AWSHOWN=0
-    while IFS='|' read -r os cve name typ mn mx sev expl note; do
+    : > "$RUN/.conf"; : > "$RUN/.pot"; : > "$RUN/.aw"; CN=0; PN=0; AWN=0
+    while IFS='|' read -r os cve name typ mn mx sev expl note fixed precond; do
       case "$os" in linux|glibc|sudo|polkit) ;; *) continue;; esac
-      # feed-sourced rows (no version range) -> awareness only, not a version match (capped)
-      if [ "$mn" = "kev" ]; then
-        AWN=$((AWN+1))
-        if [ "$AWSHOWN" -lt 15 ]; then flag INFO "$cve ($name) - latest actively-exploited CVE from feed: $note [check if applicable]"; AWSHOWN=$((AWSHOWN+1)); fi
-        continue
-      fi
-      hit=0
+      if [ "$mn" = "kev" ]; then AWN=$((AWN+1)); echo "$cve|$name|$note" >> "$RUN/.aw"; continue; fi
+      # version/build in affected range?
+      inr=0
       case "$os" in
-        linux)  inrange "$KVER" "$mn" "$mx" && hit=1;;
-        glibc)  inrange "$GVER" "$mn" "$mx" && hit=1;;
-        sudo)   [ -n "$SVER" ] && inrange "$SVER" "$mn" "$mx" && hit=1;;
-        polkit) [ -u /usr/bin/pkexec ] 2>/dev/null && hit=1;;
+        linux)  inrange "$KVER" "$mn" "$mx" && inr=1;;
+        glibc)  inrange "$GVER" "$mn" "$mx" && inr=1;;
+        sudo)   [ -n "$SVER" ] && inrange "$SVER" "$mn" "$mx" && inr=1;;
+        polkit) [ -u /usr/bin/pkexec ] 2>/dev/null && inr=1;;
       esac
-      if [ "$hit" = "1" ]; then
-        X=""; [ "$expl" = "yes" ] && X=" *in-the-wild*"
-        [ "$expl" = "yes" ] && SEV=HIGH || SEV="$sev"
-        flag "$SEV" "$cve ($name)$X applies to this $os $( [ "$os" = linux ] && echo "kernel $KVER" || echo "$([ "$os" = glibc ] && echo "glibc $GVER" || echo "$SVER")") - $note [verify patch level]"
-        echo "$cve|$name|$os|$sev|$expl|$note" >> "$RUN/.cvehits"
+      [ "$inr" = "1" ] || continue
+      X=""; [ "$expl" = "yes" ] && { X=" *in-the-wild*"; sev=HIGH; }
+      # precondition gate
+      if [ "$precond" = "userns" ] && [ "$USERNS" = "0" ]; then continue; fi          # not exploitable -> suppress
+      if [ "$precond" = "pkexec" ]; then echo "$cve|$name|$note (setuid pkexec present; confirm polkit version)" >> "$RUN/.pot"; PN=$((PN+1)); continue; fi
+      # fix-date gate: kernel built after fix month => backport present => suppress
+      if [ "$os" = "linux" ] && [ -n "$KBUILD" ] && [ -n "$fixed" ]; then
+        if [ "$KBUILD" \> "$fixed" ] || [ "$KBUILD" = "$fixed" ]; then continue; fi    # patched
+        flag "$sev" "CONFIRMED $cve ($name)$X - kernel $KVER built $KBUILD predates fix $fixed$([ "$precond" = userns ] && echo ', unpriv-userns ON') -> $note."
+        echo "$cve|CONFIRMED (built $KBUILD < fix $fixed)|$note" >> "$RUN/.conf"; CN=$((CN+1)); continue
       fi
+      # sudo / glibc: exact version in affected range IS the confirmation
+      if [ "$os" = "sudo" ] || [ "$os" = "glibc" ]; then
+        flag "$sev" "CONFIRMED $cve ($name)$X - $os $([ "$os" = sudo ] && echo "$SVER" || echo "$GVER") is in the affected range -> $note."
+        echo "$cve|CONFIRMED ($os version affected)|$note" >> "$RUN/.conf"; CN=$((CN+1)); continue
+      fi
+      # linux but build date unknown -> cannot confirm offline
+      echo "$cve|$name|$note (kernel in range; build date unknown - verify distro tracker)" >> "$RUN/.pot"; PN=$((PN+1))
     done < "$CVEDB"
-    [ "$AWN" -gt 15 ] && flag INFO "(+$((AWN-15)) more actively-exploited feed CVEs in cve-db.txt - review manually)"
-    if [ -s "$RUN/.cvehits" ]; then
-      cp "$RUN/.cvehits" "$RUN/01b_cve_matches.txt"
-      nextstep "Confirm & exploit a matched CVE" "# verify against distro security tracker, then fetch a PoC; cross-check with linux-exploit-suggester-2 / pompem"
-    else
-      flag INFO "No DB CVE matched this kernel/glibc/sudo (still run linux-exploit-suggester for breadth)."
-    fi
-    rm -f "$RUN/.cvehits" 2>/dev/null
+    [ "$CN" -gt 0 ] && cp "$RUN/.conf" "$RUN/01b_cve_confirmed.txt"
+    [ "$CN" -eq 0 ] && flag INFO "No CVE could be CONFIRMED vulnerable on this host (patched or preconditions not met)."
+    if [ "$PN" -gt 0 ]; then { echo "# in-range but UNCONFIRMED offline (verify against your distro security tracker)"; cat "$RUN/.pot"; } > "$RUN/01c_cve_potential.txt"; flag INFO "$PN in-range CVE(s) could not be confirmed offline -> 01c_cve_potential.txt (not counted as findings)."; fi
+    [ "$AWN" -gt 0 ] && { cp "$RUN/.aw" "$RUN/01d_cve_latest_feed.txt"; flag INFO "$AWN latest actively-exploited feed CVE(s) -> 01d_cve_latest_feed.txt (awareness, not host-matched)."; }
+    [ "$CN" -gt 0 ] && nextstep "Exploit a CONFIRMED CVE" "# fetch a PoC for the CONFIRMED CVE(s) in 01b_cve_confirmed.txt (verify kernel exactly first)"
+    rm -f "$RUN/.conf" "$RUN/.pot" "$RUN/.aw" 2>/dev/null
   fi
 fi
 
@@ -396,6 +410,52 @@ if runs network net ports; then
   # is this host domain-joined / AD aware?
   { [ -f /etc/krb5.conf ] || has realm || [ -d /var/lib/sss ]; } && \
     flag INFO "Host looks AD/Kerberos-aware (krb5.conf / sssd / realm) -> run rt-adenum.sh."
+fi
+
+# ----------------------------- extended (linPEAS-style) checks -----------------------------
+if runs peas extended software files; then
+  sect "Extended (linPEAS-style) checks"
+  {
+    echo "== env =="; env 2>/dev/null
+    echo; echo "== umask =="; umask 2>/dev/null
+    echo "== ASLR (2=full) =="; cat /proc/sys/kernel/randomize_va_space 2>/dev/null
+    echo "== core_pattern =="; cat /proc/sys/kernel/core_pattern 2>/dev/null
+    echo; echo "== loaded modules =="; lsmod 2>/dev/null | head -50
+    echo; echo "== mounts =="; mount 2>/dev/null
+    echo; echo "== fstab =="; cat /etc/fstab 2>/dev/null
+    echo; echo "== last logins =="; last -n 15 2>/dev/null
+    echo; echo "== logged-in users =="; who 2>/dev/null; w 2>/dev/null
+  } | save 09_extended.txt
+  # doas (sudo alternative)
+  if [ -f /etc/doas.conf ]; then
+    grep -iq 'nopass' /etc/doas.conf 2>/dev/null && { flag HIGH "doas NOPASS rule present (/etc/doas.conf) -> run a command as root without a password."; nextstep "doas nopass" "doas -u root /bin/sh"; } || flag MED "doas configured (/etc/doas.conf) - review rules."
+  fi
+  # readable sensitive password databases
+  for f in /etc/shadow /etc/gshadow /etc/security/opasswd; do [ -r "$f" ] && flag HIGH "Readable $f -> offline crack (unshadow + john/hashcat)."; done
+  # sshd exposure
+  if [ -r /etc/ssh/sshd_config ]; then
+    grep -Eiq '^[[:space:]]*PermitRootLogin[[:space:]]+yes' /etc/ssh/sshd_config 2>/dev/null && flag MED "sshd PermitRootLogin yes."
+    grep -Eiq '^[[:space:]]*PermitEmptyPasswords[[:space:]]+yes' /etc/ssh/sshd_config 2>/dev/null && flag HIGH "sshd PermitEmptyPasswords yes."
+  fi
+  # root screen/tmux sockets -> live session hijack
+  { ls -d /var/run/screen/S-root 2>/dev/null; ls /tmp/tmux-0/ 2>/dev/null; } | grep -q . && { flag HIGH "root screen/tmux socket present -> attach to root's session (screen -x / tmux -S <sock> attach)."; nextstep "session hijack" "screen -x root/  ;  tmux -S /tmp/tmux-0/default attach"; }
+  # other users' tmux/screen (lateral)
+  ls /tmp/tmux-* 2>/dev/null | grep -qv 'tmux-0' && flag INFO "Other users' tmux sockets in /tmp (hijack if readable)."
+  # mail spools (creds sometimes mailed)
+  for m in /var/mail /var/spool/mail; do [ -d "$m" ] && find "$m" -type f -readable 2>/dev/null | head -5 | while read -r mf; do flag INFO "Readable mail spool: $mf"; done; done
+  # backup / old files
+  TG find /var/backups /etc /home /opt -maxdepth 3 \( -name '*.bak' -o -name '*.old' -o -name '*~' -o -name '*.save' -o -name '*.orig' \) 2>/dev/null | head -25 | sed 's/^/backup-file: /' >> "$RUN/09_extended.txt"
+  # databases / dumps on disk
+  TG find /home /var /opt /srv -maxdepth 4 \( -name '*.sqlite*' -o -name '*.db' -o -name 'dump.sql' -o -name 'db.sql' \) 2>/dev/null | head -25 | sed 's/^/db-file: /' >> "$RUN/09_extended.txt"
+  # creds in logs
+  TG grep -rIlE 'password[=: ]|passwd[=: ]|secret|api[_-]?key|token' /var/log 2>/dev/null | head -10 | while read -r f; do flag INFO "Credential-shaped strings in log: $f"; done
+  # writable startup / module paths
+  find /etc/init.d /etc/update-motd.d /etc/rc.local 2>/dev/null -perm -002 -type f 2>/dev/null | while read -r f; do flag HIGH "World-writable startup script: $f -> code exec as root on boot/login."; done
+  { [ -d /lib/modules ] && [ -w /lib/modules ]; } && flag HIGH "/lib/modules is writable -> load a malicious kernel module -> root."
+  # files with POSIX ACLs granting us write (getfacl breadth)
+  has getfacl && TG getfacl -R -s /etc /opt /var/www 2>/dev/null | grep -B3 -E "user:$(id -un):.*w" 2>/dev/null | grep '# file:' | head -10 | sed 's/# file: /acl-writable: /' >> "$RUN/09_extended.txt"
+  # capabilities already covered in SUID/caps section; note interactive-shell interpreters with caps
+  has getcap && TG getcap -r /usr 2>/dev/null | grep -E 'perl|python|ruby|php|node' && flag HIGH "Scripting interpreter carries capabilities (see above) -> likely root."
 fi
 
 # ----------------------------- summary -----------------------------

@@ -201,9 +201,13 @@ function Invoke-RTEnum {
         Save '01_system.txt' ($sys -join "`r`n")
     }
 
-    # ======================= LOCAL: known CVE matching =======================
+    # ======================= LOCAL: CONFIRMED CVE matching =======================
+    # Only CONFIRMED vulns reach the main findings. Windows updates are cumulative,
+    # so if the host's latest patch is newer than a CVE's fix month it is SUPPRESSED
+    # (already fixed). Deterministic tests (SAM ACL, Spooler+Point&Print) confirm or
+    # suppress their CVEs directly. In-range-but-unconfirmable -> POTENTIAL side file.
     if (RunS @('cve','kernel','vuln','patch')) {
-        Sect "Known local-privesc CVE matching (offline DB, by OS build)"
+        Sect "Confirmed local-privesc CVEs (patch-date + evidence gated)"
         $cveDb=$null
         foreach($cand in @($env:CVEDB,(Join-Path $PSScriptRoot '..\data\cve-db.txt'),(Join-Path $PSScriptRoot 'data\cve-db.txt'),(Join-Path $PSScriptRoot 'cve-db.txt'),'.\data\cve-db.txt')){
             if ($cand -and (Test-Path $cand)){ $cveDb=(Resolve-Path $cand).Path; break }
@@ -211,26 +215,70 @@ function Invoke-RTEnum {
         if (-not $cveDb){ Flag 'INFO' "CVE DB not found (expected data\cve-db.txt) - run tools\update-cve-db.ps1 to fetch it." }
         else {
             $build = [int]((Get-CimInstance Win32_OperatingSystem).BuildNumber)
+            # host patch recency as yyyy-MM (latest installed hotfix)
+            $lastHf = Get-HotFix 2>$null | Where-Object { $_.InstalledOn } | Sort-Object InstalledOn -Descending | Select-Object -First 1
+            $patchYM = if ($lastHf){ $lastHf.InstalledOn.ToString('yyyy-MM') } else { $null }
             $upd = (Get-Content $cveDb | Where-Object { $_ -like 'updated|*' }) -replace 'updated\|',''
-            Flag 'INFO' "CVE DB: $cveDb (updated $upd). This host build: $build."
-            $hits=New-Object System.Collections.Generic.List[string]; $awN=0; $awShown=0
+            Flag 'INFO' "CVE DB updated $upd. Host build $build, last patch $(if($patchYM){$patchYM}else{'UNKNOWN'})."
+            if (-not $patchYM){ Flag 'MED' "Patch history unreadable - cannot prove patched state; kernel/driver CVEs will be reported as POTENTIAL, not confirmed." }
+
+            # deterministic precondition tests
+            function Test-SamReadable {
+                try { $acl = Get-Acl 'C:\Windows\System32\config\SAM' 2>$null
+                    foreach($a in $acl.Access){ if ($a.AccessControlType -eq 'Allow' -and "$($a.FileSystemRights)" -match 'Read|FullControl' -and "$($a.IdentityReference)" -match 'Everyone|Authenticated Users|BUILTIN\\Users|\\Users$'){ return $true } } } catch {}
+                return $false
+            }
+            # returns: 'off' (spooler stopped), 'weak' (explicitly weakened), 'default' (running, keys default)
+            function Get-PrintNightmareState {
+                if ((Get-Service Spooler -EA SilentlyContinue).Status -ne 'Running'){ return 'off' }
+                $pp = Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint' -EA SilentlyContinue
+                if ($pp.RestrictDriverInstallationToAdministrators -eq 1){ return 'off' }   # explicit mitigation
+                if ($pp.NoWarningNoElevationOnInstall -eq 1 -or $pp.RestrictDriverInstallationToAdministrators -eq 0){ return 'weak' }
+                return 'default'   # absent keys = admin-only default on patched hosts; decide by patch date
+            }
+
+            $confirmed=New-Object System.Collections.Generic.List[string]
+            $potential=New-Object System.Collections.Generic.List[string]
+            $awN=0; $awList=New-Object System.Collections.Generic.List[string]
             foreach($line in (Get-Content $cveDb)){
                 if ($line -notmatch '^windows\|'){ continue }
-                $p = $line -split '\|'   # os|cve|name|type|min|max|sev|exploited|note
+                $p = $line -split '\|'   # os|cve|name|type|min|max|sev|exploited|note|fixed|precond
                 if ($p.Count -lt 9){ continue }
-                if ($p[4] -eq 'kev'){ $awN++; if ($awShown -lt 15){ Flag 'INFO' "$($p[1]) ($($p[2])) - latest actively-exploited CVE from feed: $($p[8]) [check if applicable]."; $awShown++ }; $hits.Add("$($p[1])|$($p[2])|$($p[8])"); continue }
+                if ($p[4] -eq 'kev'){ $awN++; $awList.Add("$($p[1])|$($p[2])|$($p[8])"); continue }
                 $mn = if ($p[4]){ [int]$p[4] } else { 0 }
                 $mx = if ($p[5]){ [int]$p[5] } else { [int]::MaxValue }
-                if ($build -ge $mn -and $build -le $mx){
-                    $sev = if ($p[7] -eq 'yes'){ 'HIGH' } else { $p[6] }
-                    $itw = if ($p[7] -eq 'yes'){ ' *in-the-wild*' } else { '' }
-                    Flag $sev "$($p[1]) ($($p[2]))$itw may apply to build $build - $($p[8]) [verify installed KBs]."
-                    $hits.Add("$($p[1])|$($p[2])|$($p[8])")
+                if ($build -lt $mn -or $build -gt $mx){ continue }    # build not affected
+                $cve=$p[1]; $name=$p[2]; $note=$p[8]
+                $fixed = if ($p.Count -ge 10){ $p[9] } else { '' }
+                $precond = if ($p.Count -ge 11){ $p[10] } else { '' }
+                $itw = if ($p[7] -eq 'yes'){ ' *in-the-wild*' } else { '' }
+                $sev = if ($p[7] -eq 'yes'){ 'HIGH' } else { $p[6] }
+
+                # deterministic evidence first (authoritative)
+                if ($precond -eq 'sam'){
+                    if (Test-SamReadable){ Flag $sev "CONFIRMED $cve ($name)$itw - SAM hive ACL is readable by non-admins -> $note."; $confirmed.Add("$cve|CONFIRMED (SAM ACL readable)|$note") }
+                    continue   # not readable => patched/mitigated => suppress
+                }
+                if ($precond -eq 'spooler'){
+                    $st = Get-PrintNightmareState
+                    if ($st -eq 'weak'){ Flag $sev "CONFIRMED $cve ($name)$itw - Point-and-Print is explicitly weakened (driver install by non-admins) -> $note."; $confirmed.Add("$cve|CONFIRMED (Point&Print weakened)|$note") }
+                    elseif ($st -eq 'default' -and $patchYM -and $fixed -and $patchYM -lt $fixed){ Flag $sev "CONFIRMED $cve ($name)$itw - Spooler running and host unpatched ($patchYM < $fixed) -> $note."; $confirmed.Add("$cve|CONFIRMED (Spooler on, unpatched)|$note") }
+                    elseif ($st -eq 'default' -and -not $patchYM){ $potential.Add("$cve|$name|$note (Spooler running, patch date unknown)|fixed=$fixed") }
+                    continue   # 'off' / patched / default-on-patched-host => suppress
+                }
+                # patch-date gate (cumulative updates)
+                if ($patchYM -and $fixed -and ($patchYM -ge $fixed)){ continue }        # patched after fix => suppress
+                if ($patchYM -and $fixed -and ($patchYM -lt $fixed)){
+                    Flag $sev "CONFIRMED $cve ($name)$itw - host last patched $patchYM, fix shipped $fixed (missing) -> $note."
+                    $confirmed.Add("$cve|CONFIRMED (unpatched: $patchYM < $fixed)|$note")
+                } else {
+                    $potential.Add("$cve|$name|$note|fixed=$fixed")                      # patch date unknown
                 }
             }
-            if ($awN -gt 15){ Flag 'INFO' "(+$($awN-15) more actively-exploited feed CVEs in cve-db.txt - review manually)." }
-            if ($hits.Count){ Save '01b_cve_matches.txt' ($hits -join "`r`n") }
-            else { Flag 'INFO' "No DB CVE matched this build (still cross-check missing KBs with Watson/wesng)." }
+            if ($confirmed.Count){ Save '01b_cve_confirmed.txt' ($confirmed -join "`r`n") }
+            else { Flag 'INFO' "No CVE could be CONFIRMED vulnerable on this host (patched or preconditions not met)." }
+            if ($potential.Count){ Save '01c_cve_potential.txt' ("# in-range but UNCONFIRMED (verify file/KB versions manually)`r`n" + ($potential -join "`r`n")); Flag 'INFO' "$($potential.Count) in-range CVE(s) could not be confirmed offline -> 01c_cve_potential.txt (not counted as findings)." }
+            if ($awN){ Save '01d_cve_latest_feed.txt' ($awList -join "`r`n"); Flag 'INFO' "$awN latest actively-exploited feed CVE(s) saved to 01d_cve_latest_feed.txt (awareness, not host-matched)." }
         }
     }
 
@@ -465,6 +513,58 @@ function Invoke-RTEnum {
         $n.Add("== Hosts file =="); $n.Add((Get-Content C:\Windows\System32\drivers\etc\hosts 2>$null | Out-String))
         $n.Add("== Mapped drives =="); $n.Add((net use 2>$null | Out-String))
         Save '07_network.txt' ($n -join "`r`n")
+    }
+
+    # ======================= LOCAL: extended (winPEAS-style) checks =======================
+    if (RunS @('peas','extended','credstore','software','lsass')) {
+        Sect "Extended (winPEAS-style) credential & software surface"
+        $px = New-Object System.Collections.Generic.List[string]
+
+        # --- LSASS credential-theft surface ---
+        $wd = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest' 2>$null).UseLogonCredential
+        if ($wd -eq 1){ Flag 'HIGH' "WDigest UseLogonCredential=1 - CLEARTEXT passwords cached in LSASS."; AddNext "Dump WDigest cleartext" "# mimikatz: sekurlsa::wdigest (after an LSASS dump / privileged context)" }
+        $lm = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 2>$null).NoLmHash
+        if ($lm -ne 1){ Flag 'INFO' "NoLMHash != 1 - weak LM hashes may be stored." }
+        $cc = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' 2>$null).CachedLogonsCount
+        $px.Add("CachedLogonsCount: $cc (domain cached creds -> cachedump / DCC2 crack)")
+        try { $cg=(Get-CimInstance -ClassName Win32_DeviceGuard -Namespace 'root\Microsoft\Windows\DeviceGuard' 2>$null).SecurityServicesRunning
+              if ($cg -contains 1){ Flag 'INFO' "Credential Guard running - LSASS cred theft mitigated." } else { Flag 'INFO' "Credential Guard not running - LSASS dump likely yields creds." } } catch {}
+
+        # --- Windows Vault / Credential Manager ---
+        $px.Add("== vaultcmd /list =="); $px.Add((vaultcmd /list 2>$null | Out-String))
+
+        # --- saved session managers (often recoverable secrets) ---
+        if (Test-Path 'HKCU:\Software\SimonTatham\PuTTY\Sessions'){ Flag 'MED' "PuTTY saved sessions present - may hold ProxyPassword / stored host keys."; (Get-ChildItem 'HKCU:\Software\SimonTatham\PuTTY\Sessions').PSChildName | ForEach-Object { $px.Add("putty-session: $_") } }
+        if (Test-Path 'HKCU:\Software\Martin Prikryl\WinSCP 2\Sessions'){ Flag 'HIGH' "WinSCP saved sessions present - stored passwords are recoverable (weak obfuscation)."; AddNext "Recover WinSCP creds" "# winscppasswd / SharpWinSCP against HKCU\Software\Martin Prikryl\WinSCP 2\Sessions" }
+        foreach($fz in @("$env:APPDATA\FileZilla\sitemanager.xml","$env:APPDATA\FileZilla\recentservers.xml")){ if (Test-Path $fz){ Flag 'MED' "FileZilla saved sites: $fz (base64-encoded creds)." } }
+        foreach($ovpn in (Get-ChildItem "$env:USERPROFILE\OpenVPN\config" -Filter *.ovpn -EA SilentlyContinue)){ Flag 'MED' "OpenVPN profile: $($ovpn.FullName) (may embed auth)." }
+        if (Test-Path "$env:USERPROFILE\.ssh"){ Flag 'MED' "SSH keys/known_hosts in $env:USERPROFILE\.ssh (private keys + lateral targets)." }
+
+        # --- browser credential stores (DPAPI-protected; decrypt in user ctx) ---
+        foreach($b in @("$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Login Data","$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Login Data","$env:APPDATA\Mozilla\Firefox\Profiles")){
+            if (Test-Path $b){ Flag 'MED' "Browser credential store: $b (DPAPI; decrypt as this user - SharpChrome/SharpDPAPI)." }
+        }
+
+        # --- Kerberos tickets in this session ---
+        $kl = klist 2>$null | Out-String
+        if ($kl -match 'Cached Tickets:\s*\(([1-9]\d*)\)'){ Flag 'INFO' "Kerberos tickets cached (klist) - potential Pass-the-Ticket material." }
+
+        # --- PowerShell v2 downgrade surface ---
+        try { if ((Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2 -EA SilentlyContinue).State -eq 'Enabled'){ Flag 'INFO' "PowerShell v2 engine available - AMSI/ScriptBlock-logging downgrade surface (powershell -v 2)." } } catch {}
+
+        # --- writable all-users StartUp (persistence/privesc) ---
+        $startup = "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
+        if (Test-Path $startup){ try { $acl=Get-Acl $startup; foreach($a in $acl.Access){ if ($a.AccessControlType -eq 'Allow' -and "$($a.FileSystemRights)" -match 'Write|FullControl|Modify' -and "$($a.IdentityReference)" -match 'Everyone|Authenticated Users|\\Users$'){ Flag 'HIGH' "Writable all-users StartUp folder: $startup -> drop a payload for SYSTEM/next-admin."; break } } } catch {} }
+
+        # --- installed software inventory (for version-vuln hunting) ---
+        $apps = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*' 2>$null | Where-Object DisplayName | Select-Object DisplayName,DisplayVersion,Publisher
+        $px.Add("== Installed software ==`r`n" + (($apps | Sort-Object DisplayName | Format-Table -Auto | Out-String)))
+        # --- env vars + recent docs ---
+        $px.Add("== Environment =="); $px.Add((Get-ChildItem Env: 2>$null | Format-Table -Auto | Out-String))
+        $recent = Get-ChildItem "$env:APPDATA\Microsoft\Windows\Recent" -EA SilentlyContinue | Select-Object -First 30 Name
+        $px.Add("== Recent files =="); $px.Add(($recent | Format-Table -Auto | Out-String))
+
+        Save '08_extended.txt' ($px -join "`r`n")
     }
 
     # ======================= AD capability detection =======================
