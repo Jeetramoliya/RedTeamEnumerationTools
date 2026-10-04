@@ -25,6 +25,10 @@ Directory, and cloud/hybrid** — with one consistent findings model across all 
 | [`network/Invoke-RTNetScan.ps1`](network/Invoke-RTNetScan.ps1) | Windows (PS) | Host/port discovery & service fingerprint (native .NET, no nmap needed) |
 | [`cloud/rt-cloudenum.sh`](cloud/rt-cloudenum.sh) | Linux (bash) | Cloud metadata (AWS/Azure/GCP IMDS) + CLI session reuse + Kubernetes |
 | [`cloud/Invoke-RTCloudEnum.ps1`](cloud/Invoke-RTCloudEnum.ps1) | Windows (PS) | Entra ID / Azure posture (IMDS, dsregcmd/PRT, az/Az sessions, AAD Connect) |
+| [`secrets/scan-secrets.sh`](secrets/scan-secrets.sh) | Linux (bash) | Filesystem **secrets scanner**: private keys, cloud/SaaS tokens, DB conn-strings, JWTs, password assignments, git history (values masked) |
+| [`secrets/Invoke-RTSecretScan.ps1`](secrets/Invoke-RTSecretScan.ps1) | Windows (PS) | Same secrets scanner for Windows paths |
+
+Plus a **CVE detection system**: [`data/cve-db.txt`](data/cve-db.txt) (curated local-privesc/kernel CVEs with version ranges) is matched by the Linux and Windows enum scripts; [`tools/update-cve-db.sh`](tools/update-cve-db.sh) / [`.ps1`](tools/update-cve-db.ps1) refresh it from the **CISA Known-Exploited-Vulnerabilities** feed.
 
 Each is **self-contained** and **degrades gracefully** — it uses optional tools when
 present (RSAT/PowerView, netexec, impacket, certipy, az/aws/gcloud) and falls back to
@@ -105,6 +109,27 @@ chmod +x linux/rt-linenum.sh
 ```powershell
 . .\cloud\Invoke-RTCloudEnum.ps1 ; Invoke-RTCloudEnum -Json
 ```
+
+### Secrets scanning
+```bash
+./secrets/scan-secrets.sh -p /var/www --git -j    # scan a path incl. git history
+```
+```powershell
+. .\secrets\Invoke-RTSecretScan.ps1 ; Invoke-RTSecretScan -Path C:\inetpub -Json
+```
+
+### CVE detection & staying current
+The local-enum scripts flag host-relevant privesc CVEs from `data/cve-db.txt`
+(by kernel/glibc/sudo version on Linux, by OS build on Windows). Refresh with the
+latest **actively-exploited** CVEs before an engagement:
+```bash
+./tools/update-cve-db.sh            # pulls CISA KEV, appends new exploited CVEs
+```
+```powershell
+.\tools\update-cve-db.ps1
+```
+Curated rows carry verified version ranges and produce build/version-matched hits;
+feed-sourced rows surface as "latest actively-exploited" awareness items.
 
 ---
 

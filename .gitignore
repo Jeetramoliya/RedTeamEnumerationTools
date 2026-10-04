@@ -2,11 +2,13 @@
 RTEnum_*/
 CloudEnum_*/
 NetScan_*/
+Secrets_*/
 rtenum_*/
 adenum_*/
 cloudenum_*/
 ldapenum_*/
 netsweep_*/
+secrets_*/
 
 # Collected secrets that may land next to the scripts
 *.json.cred

@@ -155,6 +155,61 @@ if runs system kernel os; then
   has gcc && flag INFO "gcc present -> can compile kernel/local exploits on-host."
 fi
 
+# ----------------------------- known CVE matching -----------------------------
+if runs cve kernel vuln; then
+  sect "Known local-privesc / kernel CVE matching (offline DB)"
+  # locate the CVE DB: --cvedb, env, alongside script, or ../data
+  SELFDIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+  CVEDB="${CVEDB:-}"
+  for cand in "$CVEDB" "$SELFDIR/../data/cve-db.txt" "$SELFDIR/cve-db.txt" "$SELFDIR/data/cve-db.txt" "./data/cve-db.txt"; do
+    [ -n "$cand" ] && [ -f "$cand" ] && { CVEDB="$cand"; break; }
+  done
+  if [ -z "$CVEDB" ] || [ ! -f "$CVEDB" ]; then
+    flag INFO "CVE DB not found (expected data/cve-db.txt) - skipping. Run tools/update-cve-db.sh to fetch it."
+  else
+    flag INFO "CVE DB: $CVEDB ($(grep -c '^linux\||^glibc\||^sudo\||^windows\|^polkit' "$CVEDB" 2>/dev/null) entries, updated $(awk -F'|' '/^updated/{print $2}' "$CVEDB"))."
+    KVER=$(uname -r 2>/dev/null | grep -oE '^[0-9]+\.[0-9]+(\.[0-9]+)?')
+    GVER=$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
+    SVER=$(sudo --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+p?[0-9]*' | sed 's/p[0-9]*//')
+    # vle a b -> 0 if a <= b (version-aware)
+    vle(){ [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V 2>/dev/null | head -1)" = "$1" ]; }
+    inrange(){ v="$1"; lo="$2"; hi="$3"; [ -z "$v" ] && return 1
+      [ -n "$lo" ] && [ "$lo" != "0" ] && { vle "$lo" "$v" || return 1; }
+      [ -n "$hi" ] && { vle "$v" "$hi" || return 1; }; return 0; }
+    : > "$RUN/.cvehits"; AWN=0; AWSHOWN=0
+    while IFS='|' read -r os cve name typ mn mx sev expl note; do
+      case "$os" in linux|glibc|sudo|polkit) ;; *) continue;; esac
+      # feed-sourced rows (no version range) -> awareness only, not a version match (capped)
+      if [ "$mn" = "kev" ]; then
+        AWN=$((AWN+1))
+        if [ "$AWSHOWN" -lt 15 ]; then flag INFO "$cve ($name) - latest actively-exploited CVE from feed: $note [check if applicable]"; AWSHOWN=$((AWSHOWN+1)); fi
+        continue
+      fi
+      hit=0
+      case "$os" in
+        linux)  inrange "$KVER" "$mn" "$mx" && hit=1;;
+        glibc)  inrange "$GVER" "$mn" "$mx" && hit=1;;
+        sudo)   [ -n "$SVER" ] && inrange "$SVER" "$mn" "$mx" && hit=1;;
+        polkit) [ -u /usr/bin/pkexec ] 2>/dev/null && hit=1;;
+      esac
+      if [ "$hit" = "1" ]; then
+        X=""; [ "$expl" = "yes" ] && X=" *in-the-wild*"
+        [ "$expl" = "yes" ] && SEV=HIGH || SEV="$sev"
+        flag "$SEV" "$cve ($name)$X applies to this $os $( [ "$os" = linux ] && echo "kernel $KVER" || echo "$([ "$os" = glibc ] && echo "glibc $GVER" || echo "$SVER")") - $note [verify patch level]"
+        echo "$cve|$name|$os|$sev|$expl|$note" >> "$RUN/.cvehits"
+      fi
+    done < "$CVEDB"
+    [ "$AWN" -gt 15 ] && flag INFO "(+$((AWN-15)) more actively-exploited feed CVEs in cve-db.txt - review manually)"
+    if [ -s "$RUN/.cvehits" ]; then
+      cp "$RUN/.cvehits" "$RUN/01b_cve_matches.txt"
+      nextstep "Confirm & exploit a matched CVE" "# verify against distro security tracker, then fetch a PoC; cross-check with linux-exploit-suggester-2 / pompem"
+    else
+      flag INFO "No DB CVE matched this kernel/glibc/sudo (still run linux-exploit-suggester for breadth)."
+    fi
+    rm -f "$RUN/.cvehits" 2>/dev/null
+  fi
+fi
+
 # ----------------------------- SUID / SGID / caps -----------------------------
 if runs suid sgid caps privesc; then
   sect "SUID / SGID binaries & capabilities"

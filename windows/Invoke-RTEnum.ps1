@@ -201,6 +201,39 @@ function Invoke-RTEnum {
         Save '01_system.txt' ($sys -join "`r`n")
     }
 
+    # ======================= LOCAL: known CVE matching =======================
+    if (RunS @('cve','kernel','vuln','patch')) {
+        Sect "Known local-privesc CVE matching (offline DB, by OS build)"
+        $cveDb=$null
+        foreach($cand in @($env:CVEDB,(Join-Path $PSScriptRoot '..\data\cve-db.txt'),(Join-Path $PSScriptRoot 'data\cve-db.txt'),(Join-Path $PSScriptRoot 'cve-db.txt'),'.\data\cve-db.txt')){
+            if ($cand -and (Test-Path $cand)){ $cveDb=(Resolve-Path $cand).Path; break }
+        }
+        if (-not $cveDb){ Flag 'INFO' "CVE DB not found (expected data\cve-db.txt) - run tools\update-cve-db.ps1 to fetch it." }
+        else {
+            $build = [int]((Get-CimInstance Win32_OperatingSystem).BuildNumber)
+            $upd = (Get-Content $cveDb | Where-Object { $_ -like 'updated|*' }) -replace 'updated\|',''
+            Flag 'INFO' "CVE DB: $cveDb (updated $upd). This host build: $build."
+            $hits=New-Object System.Collections.Generic.List[string]; $awN=0; $awShown=0
+            foreach($line in (Get-Content $cveDb)){
+                if ($line -notmatch '^windows\|'){ continue }
+                $p = $line -split '\|'   # os|cve|name|type|min|max|sev|exploited|note
+                if ($p.Count -lt 9){ continue }
+                if ($p[4] -eq 'kev'){ $awN++; if ($awShown -lt 15){ Flag 'INFO' "$($p[1]) ($($p[2])) - latest actively-exploited CVE from feed: $($p[8]) [check if applicable]."; $awShown++ }; $hits.Add("$($p[1])|$($p[2])|$($p[8])"); continue }
+                $mn = if ($p[4]){ [int]$p[4] } else { 0 }
+                $mx = if ($p[5]){ [int]$p[5] } else { [int]::MaxValue }
+                if ($build -ge $mn -and $build -le $mx){
+                    $sev = if ($p[7] -eq 'yes'){ 'HIGH' } else { $p[6] }
+                    $itw = if ($p[7] -eq 'yes'){ ' *in-the-wild*' } else { '' }
+                    Flag $sev "$($p[1]) ($($p[2]))$itw may apply to build $build - $($p[8]) [verify installed KBs]."
+                    $hits.Add("$($p[1])|$($p[2])|$($p[8])")
+                }
+            }
+            if ($awN -gt 15){ Flag 'INFO' "(+$($awN-15) more actively-exploited feed CVEs in cve-db.txt - review manually)." }
+            if ($hits.Count){ Save '01b_cve_matches.txt' ($hits -join "`r`n") }
+            else { Flag 'INFO' "No DB CVE matched this build (still cross-check missing KBs with Watson/wesng)." }
+        }
+    }
+
     # ======================= LOCAL: users / groups =======================
     if (RunS @('localusers','users','groups','admins')) {
         Sect "Local users, groups & administrators"

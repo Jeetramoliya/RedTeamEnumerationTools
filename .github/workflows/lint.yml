@@ -1,0 +1,62 @@
+name: lint
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    name: ShellCheck (*.sh)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run shellcheck (errors fail the build)
+        run: |
+          set -e
+          found=0
+          while IFS= read -r f; do
+            found=1
+            echo "::group::$f"
+            # -S error: only hard errors fail CI; style/info warnings are advisory
+            shellcheck -S error "$f" || exit 1
+            echo "::endgroup::"
+          done < <(find . -name '*.sh' -type f)
+          [ "$found" = "1" ] && echo "shellcheck passed" || echo "no .sh files"
+
+  psscriptanalyzer:
+    name: PSScriptAnalyzer (*.ps1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+      - name: Analyze (Error severity fails the build)
+        shell: pwsh
+        run: |
+          $fail = $false
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $r = Invoke-ScriptAnalyzer -Path $_.FullName -Severity Error
+            if ($r) { $fail = $true; $r | Format-Table -Auto | Out-String | Write-Host }
+          }
+          if ($fail) { throw "PSScriptAnalyzer found Error-severity issues" } else { Write-Host "PSScriptAnalyzer passed" }
+
+  parse-check:
+    name: PowerShell parse check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse every .ps1
+        shell: pwsh
+        run: |
+          $bad = $false
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $tok = $null; $err = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tok,[ref]$err) | Out-Null
+            if ($err) { $bad = $true; $err | ForEach-Object { Write-Host "PARSE ERROR in $($_.Extent.File): $($_.Message)" } }
+          }
+          if ($bad) { throw "parse errors found" } else { Write-Host "all .ps1 parse OK" }
