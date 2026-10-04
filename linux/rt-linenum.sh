@@ -171,11 +171,14 @@ fi
 
 # ----------------------------- CONFIRMED CVE matching -----------------------------
 # Only CONFIRMED vulns reach the main findings. A matched row is SUPPRESSED when:
-#   - the running kernel was BUILT after the fix month (distro backport present), or
+#   - the distro CHANGELOG records this CVE as fixed (backport present - authoritative),
+#   - the running kernel was BUILT after the fix month (backport present), or
 #   - its precondition fails (e.g. unprivileged user namespaces disabled).
-# In-range but unconfirmable -> POTENTIAL side file. Feed CVEs -> awareness side file.
+# This defeats the classic linPEAS/winPEAS false positive where the upstream version
+# string looks vulnerable but the distro already backported the fix (e.g. Ubuntu sudo
+# 1.9.15p5 carrying the CVE-2025-32463 patch). In-range-but-unconfirmable -> POTENTIAL.
 if runs cve kernel vuln; then
-  sect "Confirmed local-privesc / kernel CVEs (fix-date + precondition gated)"
+  sect "Confirmed local-privesc / kernel CVEs (backport + fix-date + precondition gated)"
   SELFDIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
   CVEDB="${CVEDB:-}"
   for cand in "$CVEDB" "$SELFDIR/../data/cve-db.txt" "$SELFDIR/cve-db.txt" "$SELFDIR/data/cve-db.txt" "./data/cve-db.txt"; do
@@ -198,7 +201,26 @@ if runs cve kernel vuln; then
     inrange(){ v="$1"; lo="$2"; hi="$3"; [ -z "$v" ] && return 1
       [ -n "$lo" ] && [ "$lo" != "0" ] && { vle "$lo" "$v" || return 1; }
       [ -n "$hi" ] && { vle "$v" "$hi" || return 1; }; return 0; }
-    : > "$RUN/.conf"; : > "$RUN/.pot"; : > "$RUN/.aw"; CN=0; PN=0; AWN=0
+    # map a CVE component -> owning OS package name(s)
+    pkg_for(){ case "$1" in
+      sudo) echo sudo;;
+      glibc) echo "libc6 glibc glibc-common";;
+      polkit) echo "policykit-1 polkit pkexec";;
+      linux) echo "linux-image-$(uname -r 2>/dev/null) linux-image-generic linux-image-azure linux";;
+    esac; }
+    # is a package changelog available for at least one of these pkgs? (so absence of CVE is meaningful)
+    have_changelog(){ for p in $1; do
+        for f in ${DOCROOT:-/usr/share/doc}/$p/changelog.Debian.gz ${DOCROOT:-/usr/share/doc}/$p/changelog.gz ${DOCROOT:-/usr/share/doc}/$p/changelog; do [ -f "$f" ] && return 0; done
+        command -v rpm >/dev/null 2>&1 && rpm -q "$p" >/dev/null 2>&1 && return 0
+      done; return 1; }
+    # does the distro changelog record THIS CVE as fixed? (backport present -> NOT vulnerable)
+    cve_backported(){ cve="$1"; for p in $2; do
+        for f in ${DOCROOT:-/usr/share/doc}/$p/changelog.Debian.gz ${DOCROOT:-/usr/share/doc}/$p/changelog.gz; do
+          [ -f "$f" ] && zcat "$f" 2>/dev/null | grep -qi "$cve" && return 0; done
+        [ -f ${DOCROOT:-/usr/share/doc}/$p/changelog ] && grep -qi "$cve" ${DOCROOT:-/usr/share/doc}/$p/changelog 2>/dev/null && return 0
+        command -v rpm >/dev/null 2>&1 && rpm -q --changelog "$p" 2>/dev/null | grep -qi "$cve" && return 0
+      done; return 1; }
+    : > "$RUN/.conf"; : > "$RUN/.pot"; : > "$RUN/.aw"; CN=0; PN=0; AWN=0; BK=0
     while IFS='|' read -r os cve name typ mn mx sev expl note fixed precond; do
       case "$os" in linux|glibc|sudo|polkit) ;; *) continue;; esac
       if [ "$mn" = "kev" ]; then AWN=$((AWN+1)); echo "$cve|$name|$note" >> "$RUN/.aw"; continue; fi
@@ -212,23 +234,31 @@ if runs cve kernel vuln; then
       esac
       [ "$inr" = "1" ] || continue
       X=""; [ "$expl" = "yes" ] && { X=" *in-the-wild*"; sev=HIGH; }
+      PKGS=$(pkg_for "$os")
+      # AUTHORITATIVE: distro backported the fix (changelog records this CVE) -> NOT vulnerable
+      if [ -n "$PKGS" ] && cve_backported "$cve" "$PKGS"; then BK=$((BK+1)); continue; fi
       # precondition gate
       if [ "$precond" = "userns" ] && [ "$USERNS" = "0" ]; then continue; fi          # not exploitable -> suppress
-      if [ "$precond" = "pkexec" ]; then echo "$cve|$name|$note (setuid pkexec present; confirm polkit version)" >> "$RUN/.pot"; PN=$((PN+1)); continue; fi
-      # fix-date gate: kernel built after fix month => backport present => suppress
+      # sudo / glibc / polkit: confirm only when a changelog is readable AND the CVE is NOT in it
+      if [ "$os" = "sudo" ] || [ "$os" = "glibc" ] || [ "$os" = "polkit" ]; then
+        if have_changelog "$PKGS"; then
+          flag "$sev" "CONFIRMED $cve ($name)$X - $os $([ "$os" = sudo ] && echo "$SVER"; [ "$os" = glibc ] && echo "$GVER") affected and no distro backport in changelog -> $note."
+          echo "$cve|CONFIRMED ($os affected, no backport in changelog)|$note" >> "$RUN/.conf"; CN=$((CN+1))
+        else
+          echo "$cve|$name|$note ($os in range; no changelog to confirm backport - verify distro tracker)" >> "$RUN/.pot"; PN=$((PN+1))
+        fi
+        continue
+      fi
+      # kernel: fix-date gate (build after fix month => backport) then confirm
       if [ "$os" = "linux" ] && [ -n "$KBUILD" ] && [ -n "$fixed" ]; then
-        if [ "$KBUILD" \> "$fixed" ] || [ "$KBUILD" = "$fixed" ]; then continue; fi    # patched
-        flag "$sev" "CONFIRMED $cve ($name)$X - kernel $KVER built $KBUILD predates fix $fixed$([ "$precond" = userns ] && echo ', unpriv-userns ON') -> $note."
+        if [ "$KBUILD" \> "$fixed" ] || [ "$KBUILD" = "$fixed" ]; then continue; fi    # patched (built after fix)
+        flag "$sev" "CONFIRMED $cve ($name)$X - kernel $KVER built $KBUILD predates fix $fixed, no backport in changelog$([ "$precond" = userns ] && echo ', unpriv-userns ON') -> $note."
         echo "$cve|CONFIRMED (built $KBUILD < fix $fixed)|$note" >> "$RUN/.conf"; CN=$((CN+1)); continue
       fi
-      # sudo / glibc: exact version in affected range IS the confirmation
-      if [ "$os" = "sudo" ] || [ "$os" = "glibc" ]; then
-        flag "$sev" "CONFIRMED $cve ($name)$X - $os $([ "$os" = sudo ] && echo "$SVER" || echo "$GVER") is in the affected range -> $note."
-        echo "$cve|CONFIRMED ($os version affected)|$note" >> "$RUN/.conf"; CN=$((CN+1)); continue
-      fi
-      # linux but build date unknown -> cannot confirm offline
+      # kernel but build date unknown -> cannot confirm offline
       echo "$cve|$name|$note (kernel in range; build date unknown - verify distro tracker)" >> "$RUN/.pot"; PN=$((PN+1))
     done < "$CVEDB"
+    [ "$BK" -gt 0 ] && flag INFO "$BK matched CVE(s) are patched via distro backport (changelog-confirmed) and were suppressed."
     [ "$CN" -gt 0 ] && cp "$RUN/.conf" "$RUN/01b_cve_confirmed.txt"
     [ "$CN" -eq 0 ] && flag INFO "No CVE could be CONFIRMED vulnerable on this host (patched or preconditions not met)."
     if [ "$PN" -gt 0 ]; then { echo "# in-range but UNCONFIRMED offline (verify against your distro security tracker)"; cat "$RUN/.pot"; } > "$RUN/01c_cve_potential.txt"; flag INFO "$PN in-range CVE(s) could not be confirmed offline -> 01c_cve_potential.txt (not counted as findings)."; fi
