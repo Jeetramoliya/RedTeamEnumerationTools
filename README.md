@@ -41,7 +41,7 @@ patch-aware **CVE engine** reports only CVEs the host is genuinely vulnerable to
 | [`secrets/scan-secrets.sh`](secrets/scan-secrets.sh) | Linux (bash) | Filesystem **secrets scanner**: private keys, cloud/SaaS tokens, DB conn-strings, JWTs, password assignments, git history (values masked) |
 | [`secrets/Invoke-RTSecretScan.ps1`](secrets/Invoke-RTSecretScan.ps1) | Windows (PS) | Same secrets scanner for Windows paths |
 | [`run/run-all.sh`](run/run-all.sh) / [`run/Invoke-RTAll.ps1`](run/Invoke-RTAll.ps1) | Linux / Windows | **Orchestrators** — run every module into one folder and build the report |
-| [`tools/eg-report.py`](tools/eg-report.py) | any (Python) | Merge all `findings.json` into one ranked **HTML report**; `--diff` shows what a hop unlocked |
+| [`tools/eg-report.py`](tools/eg-report.py) | any (Python) | Merge all `findings.json` into one **HTML report** with a phase **playbook**, **MITRE ATT&CK** tags & **remediation**; `--diff` shows what a hop unlocked |
 
 Plus a **CVE detection system**: [`data/cve-db.txt`](data/cve-db.txt) (curated local-privesc/kernel CVEs) is matched by the enum scripts and reports a CVE **only when the host is genuinely vulnerable** — it consults the distro package **changelog** (and Windows patch dates) to suppress backported/patched fixes, defeating the version-only false positives that linPEAS/winPEAS produce. [`tools/update-cve-db.sh`](tools/update-cve-db.sh) / [`.ps1`](tools/update-cve-db.ps1) refresh it from the **CISA Known-Exploited-Vulnerabilities** feed.
 
@@ -230,6 +230,11 @@ dcsync, gmsa, gpo, laps, spns, policy`.
 - Cloud token retrieval is a credential-access action — gated behind `--no-token`
   to skip it, and the PowerShell cloud script only *detects* identity artifacts
   (PRT, managed identity, live sessions) rather than extracting them.
+
+See [`docs/DETECTION.md`](docs/DETECTION.md) for a full **detection & noise map** —
+what each module looks like to a defender (event IDs / telemetry) and how to stay quiet.
+The HTML report tags every finding with its **MITRE ATT&CK** technique and a **remediation**
+note, so the same run doubles as blue-team input.
 
 ## AV / Defender note
 

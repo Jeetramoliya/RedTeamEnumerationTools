@@ -229,12 +229,20 @@ function Invoke-RTEnum {
         if (-not $cveDb){ Flag 'INFO' "CVE DB not found (expected data\cve-db.txt) - run tools\update-cve-db.ps1 to fetch it." }
         else {
             $build = [int]((Get-CimInstance Win32_OperatingSystem).BuildNumber)
-            # host patch recency as yyyy-MM (latest installed hotfix)
+            # host patch recency as yyyy-MM. Use the NEWEST of: latest hotfix date, and the
+            # last-write time of ntoskrnl.exe (rewritten by every cumulative update, so a
+            # reliable "last patched" proxy even when Get-HotFix returns nothing).
+            $dates = @()
             $lastHf = Get-HotFix 2>$null | Where-Object { $_.InstalledOn } | Sort-Object InstalledOn -Descending | Select-Object -First 1
-            $patchYM = if ($lastHf){ $lastHf.InstalledOn.ToString('yyyy-MM') } else { $null }
+            if ($lastHf){ $dates += $lastHf.InstalledOn }
+            foreach($sf in @('C:\Windows\System32\ntoskrnl.exe','C:\Windows\System32\win32kfull.sys')){
+                try { $wt=(Get-Item $sf -EA Stop).LastWriteTime; if ($wt){ $dates += $wt } } catch {}
+            }
+            $patchDate = if ($dates){ ($dates | Sort-Object -Descending | Select-Object -First 1) } else { $null }
+            $patchYM = if ($patchDate){ $patchDate.ToString('yyyy-MM') } else { $null }
             $upd = (Get-Content $cveDb | Where-Object { $_ -like 'updated|*' }) -replace 'updated\|',''
-            Flag 'INFO' "CVE DB updated $upd. Host build $build, last patch $(if($patchYM){$patchYM}else{'UNKNOWN'})."
-            if (-not $patchYM){ Flag 'MED' "Patch history unreadable - cannot prove patched state; kernel/driver CVEs will be reported as POTENTIAL, not confirmed." }
+            Flag 'INFO' "CVE DB updated $upd. Host build $build, last patched $(if($patchYM){$patchYM}else{'UNKNOWN'}) (hotfix + core-file date)."
+            if (-not $patchYM){ Flag 'MED' "Patch recency unreadable - cannot prove patched state; kernel/driver CVEs will be reported as POTENTIAL, not confirmed." }
 
             # deterministic precondition tests
             function Test-SamReadable {
