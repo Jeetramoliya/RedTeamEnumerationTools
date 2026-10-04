@@ -102,4 +102,7 @@ function Invoke-RTShareHunt {
     Log "`n[+] Done. HIGH=$($high.Count) MED=$($med.Count) INFO=$($info.Count)" 'Green'
     return $run
 }
-if ($MyInvocation.InvocationName -ne '.') { Invoke-RTShareHunt @PSBoundParameters }
+if ($MyInvocation.InvocationName -ne '.') {
+    # exit: 0 = success, 2 = runtime error (orchestrator treats >=2 as module failure)
+    try { Invoke-RTShareHunt @PSBoundParameters | Out-Null; exit 0 } catch { Write-Error $_; exit 2 }
+}

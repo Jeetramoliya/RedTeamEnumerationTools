@@ -14,10 +14,12 @@ set -u
 umask 077  # loot dirs/files not world-readable
 SELFDIR=$(cd "$(dirname "$0")" && pwd); ROOT=$(cd "$SELFDIR/.." && pwd)
 OUTBASE="."; QUICK=""; LOUD=""; DONET=0; NETT=""; DOAD=0; DOCLOUD=1; DOSEC=1
-DOKUBE=0; DODISC=0; DOCAUTH=0; DOM=""; DC=""; USER=""; PASS=""
+DOKUBE=0; DODISC=0; DOCAUTH=0; ACTIVE=0; DOM=""; DC=""; USER=""; PASS=""
 while [ $# -gt 0 ]; do case "$1" in
   -o) OUTBASE="$2"; shift 2;;
   -q|--fast) QUICK="-q"; shift;;
+  --safe) ACTIVE=0; shift;;                 # default: read-only/discovery across all modules
+  --active) ACTIVE=1; shift;;               # enable active checks (DB creds, token collection)
   --loud) LOUD="--loud"; shift;;
   --net) DONET=1; case "${2:-}" in -*|"") NETT="";; *) NETT="$2"; shift;; esac; shift;;
   --ad) DOAD=1; shift;;
@@ -32,10 +34,15 @@ while [ $# -gt 0 ]; do case "$1" in
   -d) DOM="$2"; DOAD=1; shift 2;;
   --dc) DC="$2"; shift 2;;
   -u) USER="$2"; shift 2;;
-  -p) PASS="$2"; shift 2;;
+  -p) PASS="$2"; PW_CLI=1; shift 2;;
   -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
-  *) echo "unknown arg: $1"; exit 1;;
+  *) echo "unknown arg: $1" >&2; exit 3;;
 esac; done
+: "${PW_CLI:=0}"
+[ "$PW_CLI" = 1 ] && echo "[!] WARNING: -p on the command line is visible in ps/history; prefer -k or the module prompt." >&2
+# active checks that run only with --active (safe by default)
+DB_FLAG=""; TOKEN_FLAG=""
+[ "$ACTIVE" = 1 ] && { DB_FLAG="--db"; TOKEN_FLAG="--collect-tokens"; echo "[!] --active: DB default-cred tests and cloud token collection are ENABLED." >&2; }
 
 TS=$(date +%Y%m%d_%H%M%S); MASTER="${OUTBASE%/}/EnumGod_$(hostname 2>/dev/null)_${TS}"
 mkdir -p "$MASTER" || { echo "cannot create $MASTER"; exit 1; }
@@ -64,9 +71,9 @@ run(){
 
 [ -f "$ROOT/linux/rt-linenum.sh" ]  && run rt-linenum bash "$ROOT/linux/rt-linenum.sh" $QUICK
 [ "$DOSEC" = 1 ]  && [ -f "$ROOT/secrets/scan-secrets.sh" ] && run scan-secrets bash "$ROOT/secrets/scan-secrets.sh" -p "$HOME"
-[ "$DOCLOUD" = 1 ] && [ -f "$ROOT/cloud/rt-cloudenum.sh" ]   && run rt-cloudenum bash "$ROOT/cloud/rt-cloudenum.sh"
+[ "$DOCLOUD" = 1 ] && [ -f "$ROOT/cloud/rt-cloudenum.sh" ]   && run rt-cloudenum bash "$ROOT/cloud/rt-cloudenum.sh" $TOKEN_FLAG
 if [ "$DONET" = 1 ] && [ -f "$ROOT/network/net-sweep.sh" ]; then
-  if [ -n "$NETT" ]; then run net-sweep bash "$ROOT/network/net-sweep.sh" -t "$NETT" $LOUD; else run net-sweep bash "$ROOT/network/net-sweep.sh" --self; fi
+  if [ -n "$NETT" ]; then run net-sweep bash "$ROOT/network/net-sweep.sh" -t "$NETT" $LOUD $DB_FLAG; else run net-sweep bash "$ROOT/network/net-sweep.sh" --self; fi
 fi
 if [ "$DOAD" = 1 ] && [ -n "$DOM" ] && [ -f "$ROOT/linux/rt-adenum.sh" ]; then
   A=(-d "$DOM"); [ -n "$DC" ] && A+=(--dc "$DC"); [ -n "$USER" ] && A+=(-u "$USER"); [ -n "$PASS" ] && A+=(-p "$PASS")

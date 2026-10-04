@@ -131,4 +131,7 @@ function Invoke-RTCloudEnum {
     return $run
 }
 
-if ($MyInvocation.InvocationName -ne '.') { Invoke-RTCloudEnum @PSBoundParameters }
+if ($MyInvocation.InvocationName -ne '.') {
+    # exit: 0 = success, 2 = runtime error (orchestrator treats >=2 as module failure)
+    try { Invoke-RTCloudEnum @PSBoundParameters | Out-Null; exit 0 } catch { Write-Error $_; exit 2 }
+}

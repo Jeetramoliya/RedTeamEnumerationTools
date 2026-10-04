@@ -259,6 +259,10 @@ dcsync, gmsa, gpo, laps, spns, policy`.
 | `--insecure` | `ldap-enum.sh` | disables TLS cert validation (self-signed labs) with a warning |
 | `--loud` | `net-sweep.sh` / `Invoke-RTNetScan` | full port range |
 
+**Global safe/active (orchestrator):** `run-all.sh` defaults to `--safe`; pass `--active` to enable
+the active modules collectively (DB default-cred tests + cloud token collection). Individual
+modules remain safe-by-default and each active feature keeps its own flag (above) for direct use.
+
 **Credential handling:** prefer the interactive secure prompt, `-k`/Kerberos, or `-H <hash>`.
 `-p` still works for automation but prints a warning (it is visible in `ps`/shell history);
 passwords are never echoed, never written to reports, and redacted from `next_steps`.
@@ -280,6 +284,20 @@ a tools-folder exclusion. Syntax-checking never executes anything:
 ```
 
 ---
+
+## Finding schema, IDs & exit codes
+
+`tools/eg-report.py` normalizes every module's `findings.json` (any shape) into one **canonical
+schema** (`--save-merged` writes it): `id, title, severity, confidence, category, host, port,
+source, description, evidence, impact, remediation, attack, active_check, timestamp`. Each finding
+gets a **stable id** (`RT-<CATEGORY>-<hash>`, e.g. `RT-PRIV-71c0`) derived from its normalized
+title, so the *same* issue keeps the *same* id while **each affected host stays its own row**.
+Severity is `CRITICAL/HIGH/MEDIUM/LOW/INFO`; **confidence** (`CONFIRMED/LIKELY/POTENTIAL`) is an
+independent dimension. `--diff` marks findings new since a prior merged run.
+
+**Exit codes** — bash modules: `0` no findings, `1` findings, `2` runtime error, `3` bad args;
+PowerShell modules: `0` success, `2` error. The orchestrator treats `>=2` (or invalid JSON) as a
+module failure, records it in `RUN_SUMMARY.txt`, and continues the rest of the assessment.
 
 ## Core loop
 

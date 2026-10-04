@@ -108,4 +108,7 @@ function Invoke-RTSecretScan {
     return $run
 }
 
-if ($MyInvocation.InvocationName -ne '.') { Invoke-RTSecretScan @PSBoundParameters }
+if ($MyInvocation.InvocationName -ne '.') {
+    # exit: 0 = success, 2 = runtime error (orchestrator treats >=2 as module failure)
+    try { Invoke-RTSecretScan @PSBoundParameters | Out-Null; exit 0 } catch { Write-Error $_; exit 2 }
+}

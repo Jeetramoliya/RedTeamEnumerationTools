@@ -33,7 +33,7 @@ while [ $# -gt 0 ]; do
     --collect-tokens) COLLECT=1; shift;;              # ACTIVE: fetch & save IMDS credential tokens
     --no-token) shift;;                               # deprecated: discovery-only is now the default (no-op)
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
-    *) echo "unknown arg: $1"; exit 1;;
+    *) echo "unknown arg: $1" >&2; exit 3;;
   esac
 done
 
@@ -219,3 +219,6 @@ fi
 echo; echo "${G}[+] Done. HIGH=$HIGHN MED=$MEDN INFO=$INFON${N}"
 echo "${Y}[!] Credential material may be in $RUN - handle per rules of engagement.${N}"
 echo "${G}[+] Read: $SUMMARY${N}"
+
+# EnumGod exit code: 0=no findings, 1=findings, 2=runtime error, 3=bad args
+if [ $(( ${HIGHN:-0} + ${MEDN:-0} )) -gt 0 ]; then exit 1; else exit 0; fi

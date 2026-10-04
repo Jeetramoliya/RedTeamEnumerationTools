@@ -27,7 +27,7 @@ while [ $# -gt 0 ]; do
     -o) OUTBASE="$2"; shift 2;;
     -j|--json) JSON=1; shift;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
-    *) echo "unknown arg: $1"; exit 1;;
+    *) echo "unknown arg: $1" >&2; exit 3;;
   esac
 done
 # default scan set
@@ -156,3 +156,6 @@ if [ "$JSON" = "1" ]; then
     printf '  "high":'; jarr x "${J_HIGH[@]:-}"; printf ',\n  "med":'; jarr x "${J_MED[@]:-}"; printf ',\n  "info":'; jarr x "${J_INFO[@]:-}"; printf '\n}\n'; } > "$JFILE"
 fi
 echo; echo "${G}[+] Done. HIGH=$HIGHN MED=$MEDN INFO=$INFON  (matches: $MATCHES)${N}"
+
+# EnumGod exit code: 0=no findings, 1=findings, 2=runtime error, 3=bad args
+if [ $(( ${HIGHN:-0} + ${MEDN:-0} )) -gt 0 ]; then exit 1; else exit 0; fi

@@ -144,4 +144,7 @@ function Invoke-RTNetScan {
     return $run
 }
 
-if ($MyInvocation.InvocationName -ne '.') { Invoke-RTNetScan @PSBoundParameters }
+if ($MyInvocation.InvocationName -ne '.') {
+    # exit: 0 = success, 2 = runtime error (orchestrator treats >=2 as module failure)
+    try { Invoke-RTNetScan @PSBoundParameters | Out-Null; exit 0 } catch { Write-Error $_; exit 2 }
+}

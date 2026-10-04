@@ -37,7 +37,7 @@ while [ $# -gt 0 ]; do
     -o) OUTBASE="$2"; shift 2;;
     -j|--json) JSON=1; shift;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
-    *) echo "unknown arg: $1"; exit 1;;
+    *) echo "unknown arg: $1" >&2; exit 3;;
   esac
 done
 
@@ -225,3 +225,6 @@ fi
 
 echo; echo "${G}[+] Done. HIGH=$HIGHN MED=$MEDN INFO=$INFON${N}"
 echo "${G}[+] Read: $SUMMARY  and  $NEXT${N}"
+
+# EnumGod exit code: 0=no findings, 1=findings, 2=runtime error, 3=bad args
+if [ $(( ${HIGHN:-0} + ${MEDN:-0} )) -gt 0 ]; then exit 1; else exit 0; fi

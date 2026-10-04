@@ -899,6 +899,10 @@ function Invoke-RTEnum {
     }
 
     if ($Json){
+        JBag 'schema' 'enumgod/1'
+        JBag 'source' 'Invoke-RTEnum'
+        JBag 'host' $env:COMPUTERNAME
+        JBag 'active_check' [bool]($HostSweep -or $Target)
         JBag 'findings' @{ high=@($high); med=@($med); info=@($info) }
         JBag 'next_steps' ($nextList.ToArray())   # .ToArray() avoids a PS5.1 @()-on-List[object] quirk
         ($jsonBag | ConvertTo-Json -Depth 6) | Out-File (Join-Path $run 'findings.json') -Encoding UTF8
@@ -912,6 +916,7 @@ function Invoke-RTEnum {
 }
 
 # Auto-run when executed directly (not when dot-sourced)
+# exit: 0 = success, 2 = runtime error (orchestrator treats >=2 as module failure)
 if ($MyInvocation.InvocationName -ne '.') {
-    Invoke-RTEnum @PSBoundParameters
+    try { Invoke-RTEnum @PSBoundParameters | Out-Null; exit 0 } catch { Write-Error $_; exit 2 }
 }
