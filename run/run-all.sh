@@ -13,7 +13,7 @@
 set -u
 SELFDIR=$(cd "$(dirname "$0")" && pwd); ROOT=$(cd "$SELFDIR/.." && pwd)
 OUTBASE="."; QUICK=""; LOUD=""; DONET=0; NETT=""; DOAD=0; DOCLOUD=1; DOSEC=1
-DOM=""; DC=""; USER=""; PASS=""
+DOKUBE=0; DODISC=0; DOCAUTH=0; DOM=""; DC=""; USER=""; PASS=""
 while [ $# -gt 0 ]; do case "$1" in
   -o) OUTBASE="$2"; shift 2;;
   -q|--fast) QUICK="-q"; shift;;
@@ -24,7 +24,10 @@ while [ $# -gt 0 ]; do case "$1" in
   --no-cloud) DOCLOUD=0; shift;;
   --secrets) DOSEC=1; shift;;
   --no-secrets) DOSEC=0; shift;;
-  --all) DONET=1; DOAD=1; DOCLOUD=1; DOSEC=1; shift;;
+  --kube) DOKUBE=1; shift;;
+  --discover) DODISC=1; shift;;
+  --cloudauth) DOCAUTH=1; shift;;
+  --all) DONET=1; DOAD=1; DOCLOUD=1; DOSEC=1; DOKUBE=1; DODISC=1; DOCAUTH=1; shift;;
   -d) DOM="$2"; DOAD=1; shift 2;;
   --dc) DC="$2"; shift 2;;
   -u) USER="$2"; shift 2;;
@@ -48,6 +51,11 @@ fi
 if [ "$DOAD" = 1 ] && [ -n "$DOM" ] && [ -f "$ROOT/linux/rt-adenum.sh" ]; then
   A="-d $DOM"; [ -n "$DC" ] && A="$A --dc $DC"; [ -n "$USER" ] && A="$A -u $USER"; [ -n "$PASS" ] && A="$A -p $PASS"
   run bash "$ROOT/linux/rt-adenum.sh" $A
+fi
+[ "$DOKUBE" = 1 ]  && [ -f "$ROOT/cloud/kube-enum.sh" ]      && run bash "$ROOT/cloud/kube-enum.sh"
+[ "$DOCAUTH" = 1 ] && [ -f "$ROOT/cloud/cloud-authenum.sh" ] && run bash "$ROOT/cloud/cloud-authenum.sh"
+if [ "$DODISC" = 1 ] && [ -f "$ROOT/network/discover.sh" ]; then
+  if [ -n "$NETT" ]; then run bash "$ROOT/network/discover.sh" -t "$NETT"; else run bash "$ROOT/network/discover.sh"; fi
 fi
 
 echo "[*] building consolidated report..."

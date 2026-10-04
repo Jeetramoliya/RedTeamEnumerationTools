@@ -36,8 +36,13 @@ patch-aware **CVE engine** reports only CVEs the host is genuinely vulnerable to
 | [`network/Invoke-RTNetScan.ps1`](network/Invoke-RTNetScan.ps1) | Windows (PS) | Host/port discovery & service fingerprint (native .NET, no nmap needed) |
 | [`network/Invoke-RTShareHunt.ps1`](network/Invoke-RTShareHunt.ps1) | Windows (PS) | **SMB share hunt** (PowerHuntShares-style): readable/writable shares + loot-file grep |
 | [`network/share-hunt.sh`](network/share-hunt.sh) | Linux (bash) | SMB share hunt via netexec / smbclient |
+| [`network/mssql-enum.sh`](network/mssql-enum.sh) | Linux (bash) | **MSSQL** enum + **linked-server crawl** (impersonation, xp_cmdshell, OPENQUERY) |
+| [`network/discover.sh`](network/discover.sh) | Linux (bash) | **Discovery protocols**: SNMP, NetBIOS, mDNS, LLMNR/NBT-NS poisoning surface, IPv6/mitm6 |
 | [`cloud/rt-cloudenum.sh`](cloud/rt-cloudenum.sh) | Linux (bash) | Cloud metadata (AWS/Azure/GCP IMDS) + CLI session reuse + Kubernetes |
 | [`cloud/Invoke-RTCloudEnum.ps1`](cloud/Invoke-RTCloudEnum.ps1) | Windows (PS) | Entra ID / Azure posture (IMDS, dsregcmd/PRT, az/Az sessions, AAD Connect) |
+| [`cloud/cloud-authenum.sh`](cloud/cloud-authenum.sh) | Linux (bash) | **Authenticated cloud** enum (AWS/Azure/Entra/GCP): identity, roles/policies, privesc-prone perms |
+| [`cloud/kube-enum.sh`](cloud/kube-enum.sh) | Linux (bash) | **Kubernetes**: RBAC `can-i` matrix, secrets, node-escape surface, cluster pivot |
+| [`macos/rt-macenum.sh`](macos/rt-macenum.sh) | macOS (bash) | **macOS** local privesc: SIP/TCC/Gatekeeper, admin/sudo, writable LaunchDaemons, SUID, keychains |
 | [`secrets/scan-secrets.sh`](secrets/scan-secrets.sh) | Linux (bash) | Filesystem **secrets scanner**: private keys, cloud/SaaS tokens, DB conn-strings, JWTs, password assignments, git history (values masked) |
 | [`secrets/Invoke-RTSecretScan.ps1`](secrets/Invoke-RTSecretScan.ps1) | Windows (PS) | Same secrets scanner for Windows paths |
 | [`run/run-all.sh`](run/run-all.sh) / [`run/Invoke-RTAll.ps1`](run/Invoke-RTAll.ps1) | Linux / Windows | **Orchestrators** — run every module into one folder and build the report |
@@ -121,6 +126,15 @@ python3 tools/eg-report.py ./loot1 ./loot2 --diff prev-merged.json -o report.htm
 ```
 ```bash
 ./network/share-hunt.sh -t 10.0.0.0/24 -u user -p pass -j
+```
+
+### MSSQL, Kubernetes, discovery, authenticated cloud, macOS
+```bash
+./network/mssql-enum.sh -t sql01 -u sa -p 'Passw0rd!' --crawl -j   # linked-server crawl
+./cloud/kube-enum.sh -j                                            # in-pod / kubeconfig
+./network/discover.sh -t 10.0.0.0/24 -j                            # SNMP/NetBIOS/mDNS/IPv6
+./cloud/cloud-authenum.sh -j                                       # enum every logged-in cloud CLI
+./macos/rt-macenum.sh -j                                           # macOS local privesc
 ```
 
 ### Non-AD directory services (OUD / OpenLDAP / 389-DS / FreeIPA)

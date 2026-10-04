@@ -12,6 +12,11 @@ ldapenum_*/
 netsweep_*/
 secrets_*/
 sharehunt_*/
+kubeenum_*/
+mssqlenum_*/
+cloudauth_*/
+discover_*/
+macenum_*/
 merged.json
 enumgod-report.html
 EnumGod-report.html
