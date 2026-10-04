@@ -1,9 +1,12 @@
 # Generated loot / run output directories
 RTEnum_*/
 CloudEnum_*/
+NetScan_*/
 rtenum_*/
 adenum_*/
 cloudenum_*/
+ldapenum_*/
+netsweep_*/
 
 # Collected secrets that may land next to the scripts
 *.json.cred

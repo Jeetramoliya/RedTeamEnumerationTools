@@ -17,9 +17,12 @@ Directory, and cloud/hybrid** — with one consistent findings model across all 
 
 | Script | Platform | Scope |
 |---|---|---|
-| [`windows/Invoke-RTEnum.ps1`](windows/Invoke-RTEnum.ps1) | Windows (PS 5.1+) | Local host triage **+** full AD enumeration (domain member or standalone) |
-| [`linux/rt-linenum.sh`](linux/rt-linenum.sh) | Linux (bash) | Local privilege-escalation triage (SUID, sudo, caps, cron, creds, containers) |
+| [`windows/Invoke-RTEnum.ps1`](windows/Invoke-RTEnum.ps1) | Windows (PS 5.1+) | Local host triage + **deep privesc** (service-registry ACLs, DLL hijack, BYOVD drivers, UAC, named pipes) **+** full AD enumeration (domain member or standalone) |
+| [`linux/rt-linenum.sh`](linux/rt-linenum.sh) | Linux (bash) | Local privesc triage + **deep surface** (SUID/sudo/caps, cron, containers, LD_PRELOAD/env_keep, library hijack, wildcard injection, kernel CVE hints) |
 | [`linux/rt-adenum.sh`](linux/rt-adenum.sh) | Linux (bash) | AD enumeration **from** Linux (ldapsearch / netexec / impacket / certipy) |
+| [`directory/ldap-enum.sh`](directory/ldap-enum.sh) | Linux (bash) | **Non-AD directory services**: OUD (Oracle), OpenLDAP, 389-DS, FreeIPA, generic LDAP — anon binds, naming contexts, users/groups, readable hashes, ACIs, password policy |
+| [`network/net-sweep.sh`](network/net-sweep.sh) | Linux (bash) | Host/port discovery, service fingerprint, DB default-cred checks (MSSQL/MySQL/PostgreSQL/Oracle/Mongo/Redis) |
+| [`network/Invoke-RTNetScan.ps1`](network/Invoke-RTNetScan.ps1) | Windows (PS) | Host/port discovery & service fingerprint (native .NET, no nmap needed) |
 | [`cloud/rt-cloudenum.sh`](cloud/rt-cloudenum.sh) | Linux (bash) | Cloud metadata (AWS/Azure/GCP IMDS) + CLI session reuse + Kubernetes |
 | [`cloud/Invoke-RTCloudEnum.ps1`](cloud/Invoke-RTCloudEnum.ps1) | Windows (PS) | Entra ID / Azure posture (IMDS, dsregcmd/PRT, az/Az sessions, AAD Connect) |
 
@@ -78,6 +81,22 @@ chmod +x linux/rt-linenum.sh
 ./linux/rt-adenum.sh -d corp.local --dc 10.0.0.10 -k        # host Kerberos ccache
 ```
 
+### Non-AD directory services (OUD / OpenLDAP / 389-DS / FreeIPA)
+```bash
+./directory/ldap-enum.sh -H ldap://10.0.0.5                       # anonymous
+./directory/ldap-enum.sh -H ldaps://dir.corp:636 -D 'cn=Directory Manager' -w pass -j
+```
+
+### Network & service discovery
+```bash
+./network/net-sweep.sh                     # discover + scan detected /24(s)
+./network/net-sweep.sh -t 10.0.0.0/24 --loud --db -j
+./network/net-sweep.sh --self              # local inventory only (quiet)
+```
+```powershell
+. .\network\Invoke-RTNetScan.ps1 ; Invoke-RTNetScan -Target 10.0.0.0/24 -Loud -Json
+```
+
 ### Cloud / hybrid
 ```bash
 ./cloud/rt-cloudenum.sh -j                 # autodetect AWS/Azure/GCP, reuse CLI sessions
@@ -94,6 +113,9 @@ chmod +x linux/rt-linenum.sh
 - **Default = quiet.** Local host checks and normal-looking LDAP only.
 - **Loud sweeps are opt-in.** On Windows, host-touching sweeps (admin-access / share
   enumeration across every computer) run only with `-HostSweep` or scoped `-Target`.
+- **Network scanning is active & detectable.** `net-sweep.sh` / `Invoke-RTNetScan.ps1`
+  touch other hosts; scope with `-t`/`-Target`, keep it quiet by default, and run DB
+  default-credential tests only with `--db`. Use `--self`/`-Self` for local-only inventory.
 - Cloud token retrieval is a credential-access action — gated behind `--no-token`
   to skip it, and the PowerShell cloud script only *detects* identity artifacts
   (PRT, managed identity, live sessions) rather than extracting them.

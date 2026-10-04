@@ -229,6 +229,41 @@ if runs writable files passwd privesc; then
   fi
 fi
 
+# ----------------------------- deep privesc surface -----------------------------
+if runs privesc deep polkit ldpreload wildcard; then
+  sect "Deep privesc surface (sudo env, library hijack, wildcard, extra CVEs)"
+  dp=""
+  # sudo LD_PRELOAD / env_keep (sudo preserves attacker-controlled libs)
+  if sudo -n -l 2>/dev/null | grep -Eq 'env_keep\+?=.*LD_PRELOAD|env_keep\+?=.*LD_LIBRARY_PATH|SETENV'; then
+    flag HIGH "sudoers preserves LD_PRELOAD/LD_LIBRARY_PATH or allows SETENV -> load a malicious .so as root."
+    nextstep "sudo LD_PRELOAD" "build x.so with constructor setuid(0)/system(sh); sudo LD_PRELOAD=/tmp/x.so <allowed-cmd>"
+  fi
+  # writable library search paths / configs
+  for d in /lib /lib64 /usr/lib /usr/lib64 /usr/local/lib; do
+    [ -d "$d" ] && [ -w "$d" ] 2>/dev/null && flag HIGH "Writable system library dir: $d -> plant a .so to hijack a root binary."
+  done
+  [ -w /etc/ld.so.conf ] && flag HIGH "/etc/ld.so.conf is writable -> add a dir -> library hijack."
+  if [ -d /etc/ld.so.conf.d ]; then find /etc/ld.so.conf.d -type f -perm -002 2>/dev/null | while read -r f; do flag HIGH "World-writable ld.so.conf.d file: $f -> library path hijack."; done; fi
+  # writable profile scripts (run on login, often as the next user)
+  for p in /etc/profile /etc/bash.bashrc /etc/environment; do [ -w "$p" ] && flag HIGH "Writable login script: $p -> code exec as next user to log in."; done
+  [ -d /etc/profile.d ] && find /etc/profile.d -type f -perm -002 2>/dev/null | while read -r f; do flag HIGH "World-writable /etc/profile.d script: $f."; done
+  # SUID/root scripts using wildcards (tar/chown/rsync wildcard injection)
+  for f in /etc/cron.d/* /etc/crontab; do
+    [ -f "$f" ] || continue
+    grep -Eq '(tar|chown|chmod|rsync|zip).*\*' "$f" 2>/dev/null && flag MED "Wildcard in a cron command ($f) -> wildcard-injection privesc (e.g. tar --checkpoint-action)."
+  done
+  # polkit / pkexec version (PwnKit already flagged in system section; add version detail)
+  if command -v pkexec >/dev/null 2>&1; then PKV=$(pkexec --version 2>/dev/null | head -1); dp="$dp\npkexec: $PKV"; fi
+  # extra kernel CVE hints by version
+  KR=$(uname -r 2>/dev/null); GLIBC=$(ldd --version 2>/dev/null | head -1)
+  echo "$GLIBC" | grep -Eq '2\.(3[0-9]|[0-9])$|2\.3[0-6]' && flag INFO "glibc $GLIBC - if 2.34-2.38 check Looney Tunables (CVE-2023-4911, GLIBC_TUNABLES)."
+  case "$KR" in
+    2.6.*|3.*) flag MED "Old kernel $KR - check DirtyCow (CVE-2016-5195) and overlayfs (CVE-2015-1328).";;
+    5.4.*|5.8.*|5.10.*|5.11.*|5.13.*|5.14.*|5.15.*) flag INFO "Kernel $KR - check nf_tables (CVE-2022-32250/2023-32233) and GameOver(lay) CVE-2023-2640/32629 (Ubuntu).";;
+  esac
+  printf '%b\n' "$dp" | save 04c_deep_privesc.txt
+fi
+
 # ----------------------------- credentials on disk -----------------------------
 if runs creds credentials secrets keys; then
   sect "Credentials: keys, histories, configs, cloud/kube"

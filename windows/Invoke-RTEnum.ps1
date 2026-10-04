@@ -271,6 +271,76 @@ function Invoke-RTEnum {
         Save '03_services.txt' ($svcOut -join "`r`n")
     }
 
+    # ======================= LOCAL: deep privesc surface =======================
+    if (RunS @('privesc','deep','dll','driver','registry','pipes')) {
+        Sect "Deep privesc surface (service-registry ACLs, DLL hijack, drivers, UAC, pipes)"
+        $dp = New-Object System.Collections.Generic.List[string]
+        $myId = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $mySids = @($myId.User.Value) + @($myId.Groups | ForEach-Object { $_.Value })
+        $broadSids = @('S-1-1-0','S-1-5-11','S-1-5-32-545')   # Everyone, Authenticated Users, Users
+        function CanWrite($rights,$idRef){
+            if ("$rights" -notmatch 'Write|FullControl|CreateSubKey|SetValue|Modify|TakeOwnership|ChangePermissions') { return $false }
+            try { $sid=(New-Object Security.Principal.NTAccount($idRef)).Translate([Security.Principal.SecurityIdentifier]).Value } catch { $sid="$idRef" }
+            return (($mySids -contains $sid) -or ($broadSids -contains $sid) -or ("$idRef" -match 'Everyone|Authenticated Users|\\Users$'))
+        }
+
+        # 1) Writable HKLM service registry keys -> set ImagePath -> SYSTEM
+        $dp.Add("== Writable service registry keys ==")
+        Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Services' 2>$null | Select-Object -First 400 | ForEach-Object {
+            $kp = $_.PSPath; $sn=$_.PSChildName
+            try {
+                $acl = Get-Acl $kp 2>$null
+                foreach($a in $acl.Access){
+                    if ($a.AccessControlType -eq 'Allow' -and (CanWrite $a.RegistryRights $a.IdentityReference)){
+                        Flag 'HIGH' "Writable service registry key: $sn (as $($a.IdentityReference)) -> set ImagePath -> SYSTEM."
+                        AddNext "Service key hijack: $sn" "reg add HKLM\SYSTEM\CurrentControlSet\Services\$sn /v ImagePath /t REG_EXPAND_SZ /d <payload> /f ; sc start $sn"
+                        $dp.Add("  $sn  (writable by $($a.IdentityReference))"); break
+                    }
+                }
+            } catch {}
+        }
+
+        # 2) Writable directories in PATH -> DLL/binary planting (hijack)
+        $dp.Add(""); $dp.Add("== Writable PATH dirs (DLL/binary hijack) ==")
+        foreach($d in ($env:PATH -split ';')){
+            if ($d -and (Test-Path $d)){
+                try { $acl=Get-Acl $d 2>$null; foreach($a in $acl.Access){ if ($a.AccessControlType -eq 'Allow' -and (CanWrite $a.FileSystemRights $a.IdentityReference)){ Flag 'HIGH' "Writable PATH directory: $d -> plant a DLL/exe to hijack a privileged process."; $dp.Add("  $d"); break } } } catch {}
+            }
+        }
+
+        # 3) Writable service binary PARENT folders (DLL sideload into service dir)
+        $dp.Add(""); $dp.Add("== Writable folders holding a service binary ==")
+        $svc2 = Get-CimInstance Win32_Service 2>$null | Select-Object Name,PathName,StartName
+        $seenDir=@{}
+        foreach($s in $svc2){
+            $exe=[regex]::Match("$($s.PathName)",'^\s*"?([A-Za-z]:\\[^"]+?\.exe)').Groups[1].Value
+            if (-not $exe){ continue }
+            $dir=Split-Path $exe -Parent 2>$null
+            if (-not $dir -or $seenDir[$dir] -or $dir -match '(?i)^C:\\Windows'){ continue }
+            $seenDir[$dir]=$true
+            if (Test-Path $dir){ try { $acl=Get-Acl $dir 2>$null; foreach($a in $acl.Access){ if ($a.AccessControlType -eq 'Allow' -and (CanWrite $a.FileSystemRights $a.IdentityReference)){ Flag 'HIGH' "Writable service directory: $dir ($($s.Name), runs as $($s.StartName)) -> DLL sideload / binary swap."; $dp.Add("  $dir  [$($s.Name)]"); break } } } catch {} }
+        }
+
+        # 4) Third-party kernel drivers (BYOVD surface) - just inventory non-MS signers
+        $dp.Add(""); $dp.Add("== Non-Microsoft kernel drivers (BYOVD surface) ==")
+        $drv = Get-CimInstance Win32_SystemDriver 2>$null | Where-Object { $_.State -eq 'Running' }
+        $tp = foreach($x in $drv){ $p=$x.PathName -replace '^\\\?\?\\',''; if ($p -and (Test-Path $p)){ $sig=(Get-AuthenticodeSignature $p 2>$null).SignerCertificate.Subject; if ($sig -and $sig -notmatch 'Microsoft'){ "$($x.Name)  $p  [$sig]" } } }
+        if ($tp){ $dp.Add(($tp -join "`r`n")); Flag 'INFO' "$(@($tp).Count) third-party kernel driver(s) loaded - check loldrivers.io for a known-vulnerable one (BYOVD)." }
+
+        # 5) UAC posture / auto-elevate surface
+        $dp.Add(""); $dp.Add("== UAC ==")
+        $ua = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 2>$null
+        $dp.Add("EnableLUA=$($ua.EnableLUA)  ConsentPromptBehaviorAdmin=$($ua.ConsentPromptBehaviorAdmin)")
+        if ($ua.EnableLUA -eq 0){ Flag 'MED' "UAC disabled (EnableLUA=0) - admin tokens are not filtered." }
+        elseif ($ua.ConsentPromptBehaviorAdmin -eq 0){ Flag 'MED' "UAC set to elevate without prompt (ConsentPromptBehaviorAdmin=0)." }
+
+        # 6) Named pipes (potential impersonation / known-service pipes)
+        $dp.Add(""); $dp.Add("== Named pipes ==")
+        try { $pipes = [System.IO.Directory]::GetFiles('\\.\pipe\') 2>$null; $dp.Add(($pipes -join "`r`n")); if (($pipes -join ';') -match 'spoolss'){ Flag 'INFO' "Spooler pipe present (spoolss) - PrintNightmare/printerbug surface." } } catch {}
+
+        Save '03b_privesc.txt' ($dp -join "`r`n")
+    }
+
     # ======================= LOCAL: scheduled tasks / autoruns =======================
     if (RunS @('tasks','scheduled','autoruns','startup')) {
         Sect "Scheduled tasks & autoruns"
