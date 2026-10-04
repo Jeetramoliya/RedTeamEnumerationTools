@@ -638,8 +638,11 @@ function Invoke-RTEnum {
             $configNC  = "$($rootDSE.configurationNamingContext)"
             if ($defaultNC){ $adReachable=$true } else { $defaultNC="DC="+($Domain -replace '\.',',DC='); $configNC="CN=Configuration,$defaultNC" }
         } catch { $defaultNC="DC="+($Domain -replace '\.',',DC='); $configNC="CN=Configuration,$defaultNC" }
-        if ($adReachable){ Log "[+] AD reachable: $Domain (engine: $(if($useAD){'AD-module'}elseif($havePV){'PowerView+LDAP'}else{'raw LDAP'}))" 'Green' }
-        else { Flag 'INFO' "Could not reach a DC for $Domain - AD sections limited." }
+        if ($adReachable){
+            if (-not $useAD){ Flag 'INFO' "MODULE_UNAVAILABLE: ActiveDirectory PowerShell module not loaded - falling back to raw LDAP (results still complete)." }
+            Log "[+] AD reachable: $Domain (engine: $(if($useAD){'AD-module'}elseif($havePV){'PowerView+LDAP'}else{'raw LDAP'}))" 'Green'
+        }
+        else { Flag 'MED' "MODULE_UNAVAILABLE: could not reach a DC / bind LDAP for $Domain - AD enumeration did NOT run (this is a failure to enumerate, not an empty result)." }
     }
 
     # ======================= AD: domain / forest / trusts =======================
@@ -673,6 +676,7 @@ function Invoke-RTEnum {
         $u = New-Object System.Collections.Generic.List[string]
         $users = LDAP '(&(objectCategory=person)(objectClass=user))' @('samaccountname','serviceprincipalname','useraccountcontrol','description','admincount','memberof','msds-allowedtodelegateto','pwdlastset') ("LDAP://$Domain")
         $u.Add("Total users: $($users.Count)")
+        if (@($users).Count -eq 0){ Flag 'INFO' "NO_RESULTS: user query returned 0 (query ran successfully; the directory genuinely returned nothing or access was filtered) - distinct from MODULE_UNAVAILABLE." }
         foreach($r in $users){
             $sam=PV $r 'samaccountname'; $uac=IntP $r 'useraccountcontrol'; $desc=PV $r 'description'; $spn=$r.Properties['serviceprincipalname']
             if ($spn -and $spn.Count){ Flag 'HIGH' "Kerberoastable user: $sam (SPN set)."; AddNext "Kerberoast $sam" "Rubeus.exe kerberoast /user:$sam /nowrap    # or GetUserSPNs.py $Domain/USER:PASS -request" }
