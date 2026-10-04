@@ -30,19 +30,29 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -H|--uri) URI="$2"; shift 2;;
     -D|--binddn) BINDDN="$2"; shift 2;;
-    -w|--pass) BINDPW="$2"; shift 2;;
+    -w|--pass) BINDPW="$2"; PW_CLI=1; shift 2;;
     -b|--base) BASE="$2"; shift 2;;
     --starttls) STARTTLS=1; shift;;
+    --insecure) INSECURE=1; shift;;
     -o) OUTBASE="$2"; shift 2;;
     -j|--json) JSON=1; shift;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "unknown arg: $1"; exit 1;;
   esac
 done
+: "${PW_CLI:=0}"; : "${INSECURE:=0}"
 [ -z "$URI" ] && { echo "[-] need -H ldap://host[:port] (or ldaps://)"; exit 1; }
+umask 077
+# credential handling: warn if a bind password was typed on the CLI (visible in ps/history);
+# prompt securely if a bind DN was given without a password.
+[ "$PW_CLI" = 1 ] && echo "[!] WARNING: -w on the command line is visible in ps/shell history; prefer the secure prompt." >&2
+if [ -n "$BINDDN" ] && [ -z "$BINDPW" ] && [ -t 0 ]; then
+  printf 'Bind password for %s (hidden): ' "$BINDDN" >&2; read -r -s BINDPW; echo >&2
+fi
 
 HOSTID=$(echo "$URI" | sed 's#[^a-zA-Z0-9]#_#g'); TS=$(date +%Y%m%d_%H%M%S)
 RUN="${OUTBASE%/}/ldapenum_${HOSTID}_${TS}"; mkdir -p "$RUN" 2>/dev/null || { echo "[-] cannot create $RUN"; exit 1; }
+chmod 700 "$RUN" 2>/dev/null
 if [ -t 1 ]; then R=$'\e[31m';Y=$'\e[33m';C=$'\e[36m';G=$'\e[32m';D=$'\e[90m';N=$'\e[0m'; else R=;Y=;C=;G=;D=;N=; fi
 SUMMARY="$RUN/00_SUMMARY.txt"; NEXT="$RUN/NEXT_STEPS.txt"; JFILE="$RUN/findings.json"
 : > "$SUMMARY"; : > "$NEXT"; HIGHN=0;MEDN=0;INFON=0
@@ -57,12 +67,15 @@ nextstep(){ printf '[*] %s\n    %s\n\n' "$1" "$2" >> "$NEXT"; J_NEXT+=("$1 :: $2
 save(){ cat > "$RUN/$1"; }
 has(){ command -v "$1" >/dev/null 2>&1; }
 
-# assemble ldapsearch base args
-AUTH="-x"; [ -n "$BINDDN" ] && AUTH="-x -D \"$BINDDN\" -w \"$BINDPW\""
-TLS=""; [ "$STARTTLS" = "1" ] && TLS="-ZZ"
-# relax cert checks for self-signed directories (common in labs)
-export LDAPTLS_REQCERT=never
-LS(){ eval "ldapsearch -LLL -o ldif-wrap=no $TLS -H \"$URI\" $AUTH $*" 2>/dev/null; }
+# assemble ldapsearch base args as an ARRAY (no eval -> no shell-injection via DN/filters)
+AUTH=(-x); [ -n "$BINDDN" ] && AUTH=(-x -D "$BINDDN" -w "$BINDPW")
+TLSARGS=(); [ "$STARTTLS" = "1" ] && TLSARGS=(-ZZ)
+# TLS certificate validation is ON by default. --insecure disables it (self-signed labs) with a warning.
+if [ "$INSECURE" = "1" ]; then
+  export LDAPTLS_REQCERT=never
+  echo "[!] WARNING: TLS certificate verification disabled (--insecure)." >&2
+fi
+LS(){ ldapsearch -LLL -o ldif-wrap=no "${TLSARGS[@]}" -H "$URI" "${AUTH[@]}" "$@" 2>/dev/null; }
 
 enumgod_banner(){
   printf '%s' "${C:-}"

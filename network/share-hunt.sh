@@ -16,11 +16,12 @@
 #   ./share-hunt.sh -t hosts.txt -u user -H <NTLM>
 # ============================================================================
 set -u
+umask 077  # loot dirs/files not world-readable
 TARGET=""; USER=""; PASS=""; HASH=""; DOM="."; OUTBASE="."; JSON=0
 while [ $# -gt 0 ]; do case "$1" in
   -t|--target) TARGET="$2"; shift 2;;
   -u|--user) USER="$2"; shift 2;;
-  -p|--pass) PASS="$2"; shift 2;;
+  -p|--pass) PASS="$2"; PW_CLI=1; shift 2;;
   -H|--hash) HASH="$2"; shift 2;;
   -d|--domain) DOM="$2"; shift 2;;
   -o) OUTBASE="$2"; shift 2;;
@@ -32,6 +33,7 @@ esac; done
 
 HOST=$(hostname 2>/dev/null || echo host); TS=$(date +%Y%m%d_%H%M%S)
 RUN="${OUTBASE%/}/sharehunt_${HOST}_${TS}"; mkdir -p "$RUN" || { echo "cannot create $RUN"; exit 1; }
+chmod 700 "$RUN" 2>/dev/null
 if [ -t 1 ]; then R=$'\e[31m';Y=$'\e[33m';C=$'\e[36m';G=$'\e[32m';D=$'\e[90m';N=$'\e[0m'; else R=;Y=;C=;G=;D=;N=; fi
 SUMMARY="$RUN/00_SUMMARY.txt"; JFILE="$RUN/findings.json"; : > "$SUMMARY"; HIGHN=0;MEDN=0;INFON=0
 declare -a J_HIGH=() J_MED=() J_INFO=()
@@ -54,16 +56,18 @@ enumgod_banner
 echo "${G}[*] share-hunt  ->  $RUN${N}"
 
 NXC=""; has netexec && NXC=netexec; has nxc && NXC=nxc; has crackmapexec && [ -z "$NXC" ] && NXC=crackmapexec
-AUTH="-u '${USER:-}' "; if [ -n "$HASH" ]; then AUTH="$AUTH-H '$HASH'"; elif [ -n "$PASS" ]; then AUTH="$AUTH-p '$PASS'"; else AUTH="-u '' -p ''"; fi
-
+# credential hygiene + array-based auth (no eval)
+: "${PW_CLI:=0}"
+[ "$PW_CLI" = 1 ] && echo "[!] WARNING: -p on the command line is visible in ps/shell history; prefer -H <hash> or a null session." >&2
 if [ -n "$NXC" ]; then
+  AUTH=(-u "${USER:-}"); if [ -n "$HASH" ]; then AUTH+=(-H "$HASH"); elif [ -n "$PASS" ]; then AUTH+=(-p "$PASS"); else AUTH=(-u '' -p ''); fi
   echo "[*] engine: $NXC"
-  eval "$NXC smb $TARGET $AUTH --shares" 2>&1 | tee "$RUN/01_shares.txt" | tail -n +1 >/dev/null
+  "$NXC" smb "$TARGET" "${AUTH[@]}" --shares 2>&1 | tee "$RUN/01_shares.txt" >/dev/null
   # flag writable / readable-interesting
   grep -iE 'READ,WRITE|WRITE' "$RUN/01_shares.txt" 2>/dev/null | grep -viq 'NETLOGON\|SYSVOL' && flag HIGH "Writable SMB share(s) found (see 01_shares.txt) -> drop payload / capture hashes."
   grep -iE 'READ' "$RUN/01_shares.txt" 2>/dev/null | grep -viqE 'IPC\$|print\$|ADMIN\$|C\$' && flag MED "Readable non-default share(s) found (see 01_shares.txt)."
   # spider interesting files if nxc module available
-  if eval "$NXC smb $TARGET $AUTH -M spider_plus" >/dev/null 2>&1; then flag INFO "Ran spider_plus - check ~/.nxc/modules/nxc_spider_plus for indexed files."; fi
+  if "$NXC" smb "$TARGET" "${AUTH[@]}" -M spider_plus >/dev/null 2>&1; then flag INFO "Ran spider_plus - check ~/.nxc/modules/nxc_spider_plus for indexed files."; fi
 elif has smbclient; then
   echo "[*] engine: smbclient"
   # expand simple target list (single host / file); smbclient doesn't do CIDR

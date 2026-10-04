@@ -23,6 +23,7 @@
 #            bash <(curl -s http://you/rt-linenum.sh) -o /dev/shm
 # ============================================================================
 set -u
+umask 077  # loot dirs/files not world-readable
 
 # ----------------------------- framework -----------------------------
 OUTBASE="."

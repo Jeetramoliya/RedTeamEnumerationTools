@@ -153,13 +153,25 @@ def phase_of(text):
             return i, name
     return len(PHASES), "Other"
 
+def confidence(text):
+    t = text.lower()
+    if "confirmed" in t:
+        return "CONFIRMED"
+    if ("[potential]" in t or "potential" in t or "may apply" in t or "candidate" in t
+            or "verify" in t or "possible" in t or "often unauth" in t or "unconfirm" in t):
+        return "POTENTIAL"
+    return "LIKELY"
+
 def key(f):
-    return (f[0], f[1])
+    # finding identity includes HOST so the same issue on two hosts stays two assets
+    return (f[0], f[1], f[2])
 
 def build_html(findings, nexts, title, diff_keys, sources):
     counts = {"HIGH": 0, "MED": 0, "INFO": 0}
-    for sev, *_ in findings:
+    conf_counts = {"CONFIRMED": 0, "LIKELY": 0, "POTENTIAL": 0}
+    for sev, text, *_ in findings:
         counts[sev] = counts.get(sev, 0) + 1
+        conf_counts[confidence(text)] = conf_counts.get(confidence(text), 0) + 1
     new_n = sum(1 for f in findings if diff_keys is not None and key(f) not in diff_keys)
     gen = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -168,11 +180,13 @@ def build_html(findings, nexts, title, diff_keys, sources):
     for sev, text, host, module in sorted(findings, key=lambda f: (SEV_ORDER.get(f[0], 9), f[3], f[1])):
         tid, tname = attack_tag(text)
         att = f'<span class="att" title="{html.escape(tname)}">{tid}</span>' if tid else ""
-        is_new = diff_keys is not None and key((sev, text)) not in diff_keys
+        conf = confidence(text)
+        is_new = diff_keys is not None and key((sev, text, host)) not in diff_keys
         badge = '<span class="new">NEW</span>' if is_new else ""
         rows.append(
             f'<tr class="s-{sev.lower()}{" row-new" if is_new else ""}">'
-            f'<td class="sev">{sev}</td><td class="mod">{html.escape(module)}</td>'
+            f'<td class="sev">{sev}</td><td class="conf c-{conf.lower()}">{conf}</td>'
+            f'<td class="mod">{html.escape(module)}</td>'
             f'<td class="host">{html.escape(host)}</td>'
             f'<td class="txt">{html.escape(text)} {att} {badge}</td></tr>')
 
@@ -224,6 +238,7 @@ table{{width:100%;border-collapse:collapse;background:var(--card);border:1px sol
 th,td{{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}}
 th{{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.05em}}
 td.sev{{font-weight:700;white-space:nowrap}}.s-high td.sev{{color:var(--high)}}.s-med td.sev{{color:var(--med)}}.s-info td.sev{{color:var(--info)}}
+td.conf{{font-size:10px;font-weight:700;white-space:nowrap}}.c-confirmed{{color:var(--high)}}.c-likely{{color:var(--med)}}.c-potential{{color:var(--mut)}}
 td.mod,td.host{{color:var(--mut);white-space:nowrap}}td.txt{{width:99%}}
 .row-new{{background:color-mix(in srgb,var(--new) 10%,transparent)}}
 .new{{color:#021;background:var(--new);border-radius:4px;padding:0 6px;font-size:10px;font-weight:700}}
@@ -245,9 +260,10 @@ footer{{color:var(--mut);font-size:11px;margin-top:24px;text-align:center}}
 {'<div class="card c-new"><div class="n">'+str(new_n)+'</div><div class="l">New</div></div>' if diff_keys is not None else ''}
 </div>
 <h2>Attack playbook (by phase)</h2>{pb_section}
+<p class="sub">Confidence &mdash; CONFIRMED {conf_counts['CONFIRMED']} &middot; LIKELY {conf_counts['LIKELY']} &middot; POTENTIAL {conf_counts['POTENTIAL']}</p>
 <h2>Findings</h2>
-<table><thead><tr><th>Sev</th><th>Module</th><th>Host</th><th>Finding &amp; ATT&amp;CK</th></tr></thead>
-<tbody>{''.join(rows) if rows else '<tr><td colspan=4>No findings.</td></tr>'}</tbody></table>
+<table><thead><tr><th>Sev</th><th>Conf</th><th>Module</th><th>Host</th><th>Finding &amp; ATT&amp;CK</th></tr></thead>
+<tbody>{''.join(rows) if rows else '<tr><td colspan=5>No findings.</td></tr>'}</tbody></table>
 <h2>Remediation</h2><ul class="rem">{rem_section}</ul>
 <details><summary>Source runs ({len(sources)})</summary><ul>{srclist}</ul></details>
 <footer>EnumGod &middot; author Jeet Ramoliya &middot; authorized use only</footer>
@@ -278,7 +294,7 @@ def main():
     if a.diff and os.path.isfile(a.diff):
         try:
             prev = json.load(open(a.diff, encoding="utf-8-sig"))
-            diff_keys = {(x[0], x[1]) for x in prev.get("findings", [])}
+            diff_keys = {(x[0], x[1], x[2] if len(x) > 2 else "?") for x in prev.get("findings", [])}
         except Exception as e:
             print(f"[!] could not read --diff file: {e}", file=sys.stderr)
 

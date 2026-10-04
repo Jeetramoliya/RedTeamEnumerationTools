@@ -14,6 +14,7 @@
 #   GRAPH_TOKEN=eyJ... ./cloud-authenum.sh --entra      # Entra via a Graph token
 # ============================================================================
 set -u
+umask 077  # loot dirs/files not world-readable
 OUTBASE="."; JSON=0; DOAWS=0; DOAZ=0; DOGCP=0; DOENTRA=0; AUTO=1
 while [ $# -gt 0 ]; do case "$1" in
   --aws) DOAWS=1; AUTO=0; shift;;
@@ -28,6 +29,7 @@ esac; done
 
 HOST=$(hostname 2>/dev/null || echo host); TS=$(date +%Y%m%d_%H%M%S)
 RUN="${OUTBASE%/}/cloudauth_${HOST}_${TS}"; mkdir -p "$RUN" || { echo "cannot create $RUN"; exit 1; }
+chmod 700 "$RUN" 2>/dev/null
 if [ -t 1 ]; then R=$'\e[31m';Y=$'\e[33m';C=$'\e[36m';G=$'\e[32m';D=$'\e[90m';N=$'\e[0m'; else R=;Y=;C=;G=;D=;N=; fi
 SUMMARY="$RUN/00_SUMMARY.txt"; NEXT="$RUN/NEXT_STEPS.txt"; JFILE="$RUN/findings.json"; : > "$SUMMARY"; : > "$NEXT"
 HIGHN=0;MEDN=0;INFON=0; declare -a J_HIGH=() J_MED=() J_INFO=() J_NEXT=()

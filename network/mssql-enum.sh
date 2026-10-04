@@ -14,12 +14,13 @@
 #   ./mssql-enum.sh -t 10.0.0.5 -u sa -p pass --crawl          # crawl linked servers
 # ============================================================================
 set -u
+umask 077  # loot dirs/files not world-readable
 TARGET=""; PORT=1433; USER=""; PASS=""; DOM=""; OUTBASE="."; JSON=0; CRAWL=0
 while [ $# -gt 0 ]; do case "$1" in
   -t|--target) TARGET="$2"; shift 2;;
   --port) PORT="$2"; shift 2;;
   -u|--user) USER="$2"; shift 2;;
-  -p|--pass) PASS="$2"; shift 2;;
+  -p|--pass) PASS="$2"; PW_CLI=1; shift 2;;
   -d|--domain) DOM="$2"; shift 2;;
   --crawl) CRAWL=1; shift;;
   -o) OUTBASE="$2"; shift 2;;
@@ -31,6 +32,7 @@ esac; done
 
 HOST=$(hostname 2>/dev/null || echo host); TS=$(date +%Y%m%d_%H%M%S)
 RUN="${OUTBASE%/}/mssqlenum_${TARGET//[^a-zA-Z0-9]/_}_${TS}"; mkdir -p "$RUN" || { echo "cannot create $RUN"; exit 1; }
+chmod 700 "$RUN" 2>/dev/null
 if [ -t 1 ]; then R=$'\e[31m';Y=$'\e[33m';C=$'\e[36m';G=$'\e[32m';D=$'\e[90m';N=$'\e[0m'; else R=;Y=;C=;G=;D=;N=; fi
 SUMMARY="$RUN/00_SUMMARY.txt"; NEXT="$RUN/NEXT_STEPS.txt"; JFILE="$RUN/findings.json"; : > "$SUMMARY"; : > "$NEXT"
 HIGHN=0;MEDN=0;INFON=0; declare -a J_HIGH=() J_MED=() J_INFO=() J_NEXT=()
@@ -51,6 +53,11 @@ ART
   printf '%s   author : Jeet Ramoliya   module : MSSQL%s\n\n' "${D:-}" "${N:-}"; }
 enumgod_banner
 echo "${G}[*] mssql-enum  ->  $RUN  (target $TARGET:$PORT)${N}"
+
+# credential hygiene
+: "${PW_CLI:=0}"
+[ "$PW_CLI" = 1 ] && echo "[!] WARNING: -p on the command line is visible in ps/shell history; prefer the prompt." >&2
+if [ -n "$USER" ] && [ -z "$PASS" ] && [ -t 0 ]; then printf 'SQL password for %s (hidden): ' "$USER" >&2; read -r -s PASS; echo >&2; fi
 
 # pick an engine and define q() to run a T-SQL query -> stdout
 MCLIENT=$(command -v mssqlclient.py || command -v impacket-mssqlclient || true)

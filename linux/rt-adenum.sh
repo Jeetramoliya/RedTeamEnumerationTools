@@ -27,6 +27,7 @@
 #   ./rt-adenum.sh ... -o /dev/shm -j
 # ============================================================================
 set -u
+umask 077  # loot dirs/files not world-readable
 
 DOMAIN=""; DC=""; USER=""; PASS=""; HASH=""; KERB=0; OUTBASE="."; JSON=0
 USERLIST=""; SPRAY=""; USERENUM=0
@@ -35,7 +36,7 @@ while [ $# -gt 0 ]; do
     -d|--domain) DOMAIN="$2"; shift 2;;
     --dc) DC="$2"; shift 2;;
     -u|--user) USER="$2"; shift 2;;
-    -p|--pass) PASS="$2"; shift 2;;
+    -p|--pass) PASS="$2"; PW_CLI=1; shift 2;;
     -H|--hash) HASH="$2"; shift 2;;
     -k|--kerberos) KERB=1; shift;;
     --userlist) USERLIST="$2"; shift 2;;      # file of usernames (kerbrute-style)
@@ -81,7 +82,15 @@ has(){ command -v "$1" >/dev/null 2>&1; }
 # build credential fragments for each engine
 NXC=""; has netexec && NXC="netexec"; has nxc && NXC="nxc"; has crackmapexec && [ -z "$NXC" ] && NXC="crackmapexec"
 # auth args per engine
-nxc_auth(){ a="-u '$USER'"; if [ -n "$HASH" ]; then a="$a -H '$HASH'"; elif [ -n "$PASS" ]; then a="$a -p '$PASS'"; fi; [ "$KERB" = 1 ] && a="$a -k"; echo "$a"; }
+# credential hygiene: warn on CLI password, prompt securely if a user was given without secret
+: "${PW_CLI:=0}"
+[ "$PW_CLI" = 1 ] && echo "[!] WARNING: -p on the command line is visible in ps/shell history; prefer the prompt, -H <hash>, or -k." >&2
+if [ -n "$USER" ] && [ -z "$PASS" ] && [ -z "$HASH" ] && [ "$KERB" != 1 ] && [ -t 0 ]; then
+  printf 'Password for %s (hidden, empty = none): ' "$USER" >&2; read -r -s PASS; echo >&2
+fi
+# build netexec auth as an ARRAY (no eval; immune to quoting/injection in USER/PASS/HASH)
+nxc_auth_arr(){ NXC_AUTH=(-u "$USER"); if [ -n "$HASH" ]; then NXC_AUTH+=(-H "$HASH"); elif [ -n "$PASS" ]; then NXC_AUTH+=(-p "$PASS"); fi; [ "$KERB" = 1 ] && NXC_AUTH+=(-k); }
+nxc_auth(){ printf '%s' "-u <user> <secret-redacted>"; }   # display-only (never prints the real secret)
 LDAPBASE="dc=$(echo "$DOMAIN" | sed 's/\./,dc=/g')"
 
 enumgod_banner(){
@@ -171,12 +180,12 @@ fi
 # ---------- netexec / cme (richer, if present) ----------
 if [ -n "$NXC" ] && [ -n "$USER" ]; then
   sect "netexec/CME enumeration"
-  AUTH=$(nxc_auth)
+  nxc_auth_arr
   {
-    echo "== ldap --users =="; eval "$NXC ldap $DC $AUTH --users" 2>&1 | tail -60
-    echo; echo "== ldap --groups (Domain Admins) =="; eval "$NXC ldap $DC $AUTH --groups 'Domain Admins'" 2>&1 | tail -30
-    echo; echo "== smb shares (DC) =="; eval "$NXC smb $DC $AUTH --shares" 2>&1 | tail -40
-    echo; echo "== pass-pol =="; eval "$NXC smb $DC $AUTH --pass-pol" 2>&1 | tail -20
+    echo "== ldap --users =="; "$NXC" ldap "$DC" "${NXC_AUTH[@]}" --users 2>&1 | tail -60
+    echo; echo "== ldap --groups (Domain Admins) =="; "$NXC" ldap "$DC" "${NXC_AUTH[@]}" --groups 'Domain Admins' 2>&1 | tail -30
+    echo; echo "== smb shares (DC) =="; "$NXC" smb "$DC" "${NXC_AUTH[@]}" --shares 2>&1 | tail -40
+    echo; echo "== pass-pol =="; "$NXC" smb "$DC" "${NXC_AUTH[@]}" --pass-pol 2>&1 | tail -20
   } | save 04_netexec.txt
   # lockout threshold -> spray safety
   LT=$(grep -i 'lockout threshold' "$RUN/04_netexec.txt" 2>/dev/null | grep -oE '[0-9]+|None' | head -1)
@@ -240,7 +249,7 @@ if [ "$USERENUM" = "1" ] || [ -n "$SPRAY" ]; then
       kerbrute userenum -d "$DOMAIN" --dc "$DC" "$ULIST" 2>/dev/null | tee "$RUN/08_userenum.txt" >/dev/null
       grep -q 'VALID USERNAME' "$RUN/08_userenum.txt" 2>/dev/null && flag MED "Valid usernames enumerated via kerbrute (see 08_userenum.txt)."
     elif [ -n "$NXC" ]; then
-      eval "$NXC ldap $DC -u '$ULIST' -p '' " 2>/dev/null | tee "$RUN/08_userenum.txt" >/dev/null
+      "$NXC" ldap "$DC" -u "$ULIST" -p '' 2>/dev/null | tee "$RUN/08_userenum.txt" >/dev/null
       flag INFO "Attempted user enumeration via $NXC (see 08_userenum.txt)."
     else
       flag INFO "No kerbrute/netexec for AS-REQ user enumeration - install kerbrute, or GetNPUsers.py -usersfile."
@@ -256,7 +265,7 @@ if [ "$USERENUM" = "1" ] || [ -n "$SPRAY" ]; then
       kerbrute passwordspray -d "$DOMAIN" --dc "$DC" "$ULIST" "$SPRAY" 2>/dev/null | tee "$RUN/09_spray.txt" >/dev/null
       grep -q 'VALID LOGIN' "$RUN/09_spray.txt" 2>/dev/null && flag HIGH "VALID credential(s) found by spray (see 09_spray.txt)!"
     elif [ -n "$NXC" ]; then
-      eval "$NXC smb $DC -u '$ULIST' -p '$SPRAY' --continue-on-success" 2>/dev/null | tee "$RUN/09_spray.txt" >/dev/null
+      "$NXC" smb "$DC" -u "$ULIST" -p "$SPRAY" --continue-on-success 2>/dev/null | tee "$RUN/09_spray.txt" >/dev/null
       grep -qi '\[+\]' "$RUN/09_spray.txt" 2>/dev/null && flag HIGH "VALID credential(s) found by spray (see 09_spray.txt)!"
     elif has kinit; then
       # native spray via kinit (no extra tools): success => valid password

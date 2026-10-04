@@ -17,6 +17,7 @@
 #   ./discover.sh -t 10.0.0.5 --community public
 # ============================================================================
 set -u
+umask 077  # loot dirs/files not world-readable
 TARGET=""; OUTBASE="."; JSON=0; COMMUNITY="public private community"
 while [ $# -gt 0 ]; do case "$1" in
   -t|--target) TARGET="$2"; shift 2;;
@@ -29,6 +30,7 @@ esac; done
 
 HOST=$(hostname 2>/dev/null || echo host); TS=$(date +%Y%m%d_%H%M%S)
 RUN="${OUTBASE%/}/discover_${HOST}_${TS}"; mkdir -p "$RUN" || { echo "cannot create $RUN"; exit 1; }
+chmod 700 "$RUN" 2>/dev/null
 if [ -t 1 ]; then R=$'\e[31m';Y=$'\e[33m';C=$'\e[36m';G=$'\e[32m';D=$'\e[90m';N=$'\e[0m'; else R=;Y=;C=;G=;D=;N=; fi
 SUMMARY="$RUN/00_SUMMARY.txt"; NEXT="$RUN/NEXT_STEPS.txt"; JFILE="$RUN/findings.json"; : > "$SUMMARY"; : > "$NEXT"
 HIGHN=0;MEDN=0;INFON=0; declare -a J_HIGH=() J_MED=() J_INFO=() J_NEXT=()

@@ -19,8 +19,10 @@ patch-aware **CVE engine** reports only CVEs the host is genuinely vulnerable to
 
 > **Authorized use only.** These scripts are for systems you own or have explicit,
 > written permission to test (pentest/red-team engagements, CTFs, your own lab).
-> Everything here is read-only recon; it finds and *ranks* targets and prints the
-> command you would run next — **you** decide and execute each action.
+> **Read-only / discovery by default.** A few checks are *active* (they touch other
+> hosts, create a test file, or fetch a credential token) and are **opt-in** behind an
+> explicit flag — see "Active checks" below. Credentials are never written to reports;
+> a password passed with `-p` triggers a warning and a secure prompt is offered instead.
 
 ---
 
@@ -155,8 +157,8 @@ python3 tools/eg-report.py ./loot1 ./loot2 --diff prev-merged.json -o report.htm
 
 ### Cloud / hybrid
 ```bash
-./cloud/rt-cloudenum.sh -j                 # autodetect AWS/Azure/GCP, reuse CLI sessions
-./cloud/rt-cloudenum.sh --no-token         # identify only, don't fetch tokens
+./cloud/rt-cloudenum.sh -j                 # discovery-only (default): identify provider/MI, no tokens
+./cloud/rt-cloudenum.sh --collect-tokens   # ACTIVE: also fetch & save IMDS credential tokens (0600)
 ```
 ```powershell
 . .\cloud\Invoke-RTCloudEnum.ps1 ; Invoke-RTCloudEnum -Json
@@ -244,6 +246,23 @@ dcsync, gmsa, gpo, laps, spns, policy`.
 - Cloud token retrieval is a credential-access action — gated behind `--no-token`
   to skip it, and the PowerShell cloud script only *detects* identity artifacts
   (PRT, managed identity, live sessions) rather than extracting them.
+
+### Active checks (all opt-in; default is discovery/read-only)
+
+| Flag | Module | Active behavior |
+|---|---|---|
+| `-TestWrite` | `Invoke-RTShareHunt` | writes+deletes a marker file to prove share write access |
+| `--db` | `net-sweep.sh` | attempts default/blank DB credentials |
+| `--crawl` | `mssql-enum.sh` | runs `OPENQUERY` across linked servers |
+| `--spray` / `--userenum` | `rt-adenum.sh` | Kerberos auth attempts (lockout risk) |
+| `--collect-tokens` | `rt-cloudenum.sh` | fetches & saves IMDS credential **tokens** (0600) |
+| `--insecure` | `ldap-enum.sh` | disables TLS cert validation (self-signed labs) with a warning |
+| `--loud` | `net-sweep.sh` / `Invoke-RTNetScan` | full port range |
+
+**Credential handling:** prefer the interactive secure prompt, `-k`/Kerberos, or `-H <hash>`.
+`-p` still works for automation but prints a warning (it is visible in `ps`/shell history);
+passwords are never echoed, never written to reports, and redacted from `next_steps`.
+Loot directories are created `0700` and token/credential files `0600`.
 
 See [`docs/DETECTION.md`](docs/DETECTION.md) for a full **detection & noise map** —
 what each module looks like to a defender (event IDs / telemetry) and how to stay quiet.

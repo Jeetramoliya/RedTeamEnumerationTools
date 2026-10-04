@@ -17,6 +17,7 @@
 #   ./scan-secrets.sh -p / --max 5         # whole FS, skip files > 5 MB
 # ============================================================================
 set -u
+umask 077  # loot dirs/files not world-readable
 SCANPATH=""; OUTBASE="."; JSON=0; GITSCAN=0; MAXMB=5
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -34,6 +35,7 @@ if [ -z "$SCANPATH" ]; then SCANPATH="$HOME /etc /opt /srv /var/www /home"; fi
 
 HOST=$(hostname 2>/dev/null || echo host); TS=$(date +%Y%m%d_%H%M%S)
 RUN="${OUTBASE%/}/secrets_${HOST}_${TS}"; mkdir -p "$RUN" 2>/dev/null || { echo "[-] cannot create $RUN"; exit 1; }
+chmod 700 "$RUN" 2>/dev/null
 if [ -t 1 ]; then R=$'\e[31m';Y=$'\e[33m';C=$'\e[36m';G=$'\e[32m';D=$'\e[90m';N=$'\e[0m'; else R=;Y=;C=;G=;D=;N=; fi
 SUMMARY="$RUN/00_SUMMARY.txt"; MATCHES="$RUN/01_matches.txt"; JFILE="$RUN/findings.json"
 : > "$SUMMARY"; : > "$MATCHES"; HIGHN=0;MEDN=0;INFON=0
@@ -108,27 +110,32 @@ done | sort -u > "$RUN/.hits"
 # summarise hits by pattern
 cp "$RUN/.hits" "$MATCHES" 2>/dev/null
 if [ -s "$RUN/.hits" ]; then
+  # confidence: structured-format secrets are HIGH_CONFIDENCE; generic keyword matches are POSSIBLE
+  conf_for(){ case "$1" in
+    privatekey|aws-akia|gcp-sa-key|github-token|slack-token|google-api|stripe-live|npm-token|db-connstring) echo HIGH_CONFIDENCE;;
+    *) echo POSSIBLE;; esac; }
   for pn in privatekey aws-akia gcp-sa-key github-token slack-token google-api stripe-live npm-token db-connstring azure-secret jwt bearer generic-pass; do
     c=$(grep -c "|${pn}|" "$RUN/.hits" 2>/dev/null)
     [ "${c:-0}" -gt 0 ] || continue
     sev=$(grep "|${pn}|" "$RUN/.hits" | head -1 | cut -d'|' -f1)
     ex=$(grep "|${pn}|" "$RUN/.hits" | head -1 | cut -d'|' -f3)
-    flag "$sev" "$c x ${pn} (e.g. ${ex}) - see 01_matches.txt (values masked)."
+    flag "$sev" "[$(conf_for "$pn")] $c x ${pn} (e.g. ${ex}) - see 01_matches.txt (values masked)."
   done
 else
   flag INFO "No secrets matched in the scanned path."
 fi
 rm -f "$RUN/.files" "$RUN/.hits" 2>/dev/null
 
-# git history scan (committed-then-removed secrets)
+# git history scan (committed-then-removed secrets) - matched lines are MASKED before writing
 if [ "$GITSCAN" = "1" ]; then
   sect "Git history secrets"
   for p in $SCANPATH; do
     [ -d "$p/.git" ] || continue
+    gf="$RUN/02_git_$(echo "$p"|tr '/' '_').txt"
     TG git -C "$p" log -p --all 2>/dev/null \
-      | grep -IEn '(-----BEGIN [A-Z ]*PRIVATE KEY-----|A(KIA|SIA)[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|password *[:=]|secret *[:=])' \
-      | head -40 > "$RUN/02_git_$(echo "$p"|tr '/' '_').txt" 2>/dev/null
-    [ -s "$RUN/02_git_$(echo "$p"|tr '/' '_').txt" ] && flag HIGH "Secrets found in git history of $p -> git log -p (see 02_git_*.txt)."
+      | grep -aIE '(-----BEGIN [A-Z ]*PRIVATE KEY-----|A(KIA|SIA)[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36,}|xox[baprs]-[0-9A-Za-z-]{10,}|sk_live_[0-9a-zA-Z]{20,}|AIza[0-9A-Za-z_-]{35}|password *[:=]|secret *[:=]|api[_-]?key *[:=])' \
+      | head -60 | while IFS= read -r line; do mask "${line:0:160}"; done > "$gf" 2>/dev/null
+    [ -s "$gf" ] && flag HIGH "Secret-shaped lines in git history of $p (MASKED in 02_git_*.txt) -> review with: git -C $p log -p."
   done
 fi
 

