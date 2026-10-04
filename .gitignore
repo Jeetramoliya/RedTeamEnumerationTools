@@ -3,12 +3,18 @@ RTEnum_*/
 CloudEnum_*/
 NetScan_*/
 Secrets_*/
+ShareHunt_*/
+EnumGod_*/
 rtenum_*/
 adenum_*/
 cloudenum_*/
 ldapenum_*/
 netsweep_*/
 secrets_*/
+sharehunt_*/
+merged.json
+enumgod-report.html
+EnumGod-report.html
 
 # Collected secrets that may land next to the scripts
 *.json.cred
