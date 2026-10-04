@@ -1,4 +1,5 @@
 <#
+    EnumGod - Red Team Enumeration Toolkit   |   Author: Jeet Ramoliya
     Invoke-RTNetScan.ps1
     ============================================================================
     Red Team NETWORK discovery & service fingerprint from a Windows foothold.
@@ -37,6 +38,19 @@ function Invoke-RTNetScan {
     $run=Join-Path $OutDir ("NetScan_{0}_{1}" -f $env:COMPUTERNAME,$stamp)
     New-Item -ItemType Directory -Path $run -Force | Out-Null
     function Save($f,$d){ $d | Out-File -FilePath (Join-Path $run $f) -Encoding UTF8 -Width 4096 }
+    function Banner($m){
+        @(
+            ' _____                        ____           _',
+            '| ____|_ __  _   _ _ __ ___  / ___| ___   __| |',
+            '|  _| | ''_ \| | | | ''_ ` _ \| |  _ / _ \ / _` |',
+            '| |___| | | | |_| | | | | | | |_| | (_) | (_| |',
+            '|_____|_| |_|\__,_|_| |_| |_|\____|\___/ \__,_|'
+        ) | ForEach-Object { Write-Host $_ -ForegroundColor Cyan }
+        Write-Host '   EnumGod  Red Team Enumeration Toolkit' -ForegroundColor Green
+        Write-Host "   author : Jeet Ramoliya   module : $m" -ForegroundColor DarkGray
+        Write-Host ''
+    }
+    Banner 'network discovery & services'
     Log "[*] Invoke-RTNetScan  ->  $run" 'Green'
 
     $portMap=@{ 21='FTP';22='SSH';23='Telnet';25='SMTP';53='DNS';80='HTTP';110='POP3';111='RPCbind';135='MSRPC';139='SMB';143='IMAP';389='LDAP';443='HTTPS';445='SMB';636='LDAPS';993='IMAPS';1433='MSSQL';1521='Oracle-TNS';2049='NFS';2375='Docker-API';3306='MySQL';3389='RDP';5432='PostgreSQL';5900='VNC';5985='WinRM-HTTP';5986='WinRM-HTTPS';6379='Redis';8080='HTTP-alt';8443='HTTPS-alt';9200='Elasticsearch';11211='Memcached';27017='MongoDB' }

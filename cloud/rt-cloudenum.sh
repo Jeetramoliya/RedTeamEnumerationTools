@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# EnumGod - Red Team Enumeration Toolkit   |   Author: Jeet Ramoliya
 # ============================================================================
 # rt-cloudenum.sh  -  Red Team CLOUD / hybrid recon from a *nix foothold.
 #                     Same ranked findings model as the rest of the toolkit.
@@ -55,6 +56,19 @@ GET(){ url="$1"; shift; hdrs=""; for h in "$@"; do hdrs="$hdrs -H \"$h\""; done
   elif has wget; then wh=""; for h in "$@"; do wh="$wh --header=\"$h\""; done; eval "wget -q -T 3 -O - $wh '$url'" 2>/dev/null; fi; }
 
 IMDS=169.254.169.254
+enumgod_banner(){
+  printf '%s' "${C:-}"
+  cat <<'ART'
+ _____                        ____           _
+| ____|_ __  _   _ _ __ ___  / ___| ___   __| |
+|  _| | '_ \| | | | '_ ` _ \| |  _ / _ \ / _` |
+| |___| | | | |_| | | | | | | |_| | (_) | (_| |
+|_____|_| |_|\__,_|_| |_| |_|\____|\___/ \__,_|
+ART
+  printf '%s   EnumGod  Red Team Enumeration Toolkit%s\n' "${G:-}" "${N:-}"
+  printf '%s   author : Jeet Ramoliya   module : %s%s\n\n' "${D:-}" "$1" "${N:-}"
+}
+enumgod_banner "cloud / IMDS"
 echo "${G}[*] rt-cloudenum  ->  $RUN${N}"
 echo "${D}[*] $(date)  host=$HOST  no-token=$NOTOKEN${N}"
 

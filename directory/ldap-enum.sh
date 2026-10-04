@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# EnumGod - Red Team Enumeration Toolkit   |   Author: Jeet Ramoliya
 # ============================================================================
 # ldap-enum.sh  -  Red Team enumeration of NON-AD directory services.
 #                  OUD (Oracle Unified Directory) / OID, OpenLDAP, 389-DS,
@@ -63,6 +64,19 @@ TLS=""; [ "$STARTTLS" = "1" ] && TLS="-ZZ"
 export LDAPTLS_REQCERT=never
 LS(){ eval "ldapsearch -LLL -o ldif-wrap=no $TLS -H \"$URI\" $AUTH $*" 2>/dev/null; }
 
+enumgod_banner(){
+  printf '%s' "${C:-}"
+  cat <<'ART'
+ _____                        ____           _
+| ____|_ __  _   _ _ __ ___  / ___| ___   __| |
+|  _| | '_ \| | | | '_ ` _ \| |  _ / _ \ / _` |
+| |___| | | | |_| | | | | | | |_| | (_) | (_| |
+|_____|_| |_|\__,_|_| |_| |_|\____|\___/ \__,_|
+ART
+  printf '%s   EnumGod  Red Team Enumeration Toolkit%s\n' "${G:-}" "${N:-}"
+  printf '%s   author : Jeet Ramoliya   module : %s%s\n\n' "${D:-}" "$1" "${N:-}"
+}
+enumgod_banner "non-AD directory (OUD / LDAP)"
 echo "${G}[*] ldap-enum  ->  $RUN${N}"
 echo "${D}[*] $URI  bind=${BINDDN:-<anonymous>}${N}"
 

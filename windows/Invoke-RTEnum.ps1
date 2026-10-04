@@ -1,4 +1,5 @@
 <#
+    EnumGod - Red Team Enumeration Toolkit   |   Author: Jeet Ramoliya
     Invoke-RTEnum.ps1
     ============================================================================
     General-purpose RED TEAM enumeration for Windows hosts & Active Directory.
@@ -122,6 +123,19 @@ function Invoke-RTEnum {
     function Save($file,$data){ $data | Out-File -FilePath (Join-Path $run $file) -Encoding UTF8 -Width 4096 }
     function JBag($k,$v){ $jsonBag[$k] = $v }
 
+    function Banner($m){
+        @(
+            ' _____                        ____           _',
+            '| ____|_ __  _   _ _ __ ___  / ___| ___   __| |',
+            '|  _| | ''_ \| | | | ''_ ` _ \| |  _ / _ \ / _` |',
+            '| |___| | | | |_| | | | | | | |_| | (_) | (_| |',
+            '|_____|_| |_|\__,_|_| |_| |_|\____|\___/ \__,_|'
+        ) | ForEach-Object { Write-Host $_ -ForegroundColor Cyan }
+        Write-Host '   EnumGod  Red Team Enumeration Toolkit' -ForegroundColor Green
+        Write-Host "   author : Jeet Ramoliya   module : $m" -ForegroundColor DarkGray
+        Write-Host ''
+    }
+    Banner 'Windows host + Active Directory (winPEAS-style)'
     Log "[*] Invoke-RTEnum  ->  $run" 'Green'
     Log "[*] $(Get-Date)  as $(whoami)  quiet=$(-not ($HostSweep -or $Target))" 'DarkGray'
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# EnumGod - Red Team Enumeration Toolkit   |   Author: Jeet Ramoliya
 # ============================================================================
 # scan-secrets.sh  -  Red Team filesystem SECRETS scanner (trufflehog-lite).
 #                     Same ranked findings model as the rest of the toolkit.
@@ -49,6 +50,19 @@ if has timeout; then TG(){ timeout 120 "$@"; }; else TG(){ "$@"; }; fi
 # mask a secret-ish token: keep first 3 + last 2 chars
 mask(){ echo "$1" | sed -E 's/([A-Za-z0-9+/_-]{3})[A-Za-z0-9+/_=.-]{4,}([A-Za-z0-9+/_-]{2})/\1***\2/g'; }
 
+enumgod_banner(){
+  printf '%s' "${C:-}"
+  cat <<'ART'
+ _____                        ____           _
+| ____|_ __  _   _ _ __ ___  / ___| ___   __| |
+|  _| | '_ \| | | | '_ ` _ \| |  _ / _ \ / _` |
+| |___| | | | |_| | | | | | | |_| | (_) | (_| |
+|_____|_| |_|\__,_|_| |_| |_|\____|\___/ \__,_|
+ART
+  printf '%s   EnumGod  Red Team Enumeration Toolkit%s\n' "${G:-}" "${N:-}"
+  printf '%s   author : Jeet Ramoliya   module : %s%s\n\n' "${D:-}" "$1" "${N:-}"
+}
+enumgod_banner "secrets scanner"
 echo "${G}[*] scan-secrets  ->  $RUN${N}"
 echo "${D}[*] path: $SCANPATH   git-history: $GITSCAN   max: ${MAXMB}MB${N}"
 

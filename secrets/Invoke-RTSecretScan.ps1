@@ -1,4 +1,5 @@
 <#
+    EnumGod - Red Team Enumeration Toolkit   |   Author: Jeet Ramoliya
     Invoke-RTSecretScan.ps1
     ============================================================================
     Red Team filesystem SECRETS scanner for Windows. Windows companion to
@@ -31,6 +32,19 @@ function Invoke-RTSecretScan {
     $stamp=Get-Date -Format 'yyyyMMdd_HHmmss'
     $run=Join-Path $OutDir ("Secrets_{0}_{1}" -f $env:COMPUTERNAME,$stamp)
     New-Item -ItemType Directory -Path $run -Force | Out-Null
+    function Banner($m){
+        @(
+            ' _____                        ____           _',
+            '| ____|_ __  _   _ _ __ ___  / ___| ___   __| |',
+            '|  _| | ''_ \| | | | ''_ ` _ \| |  _ / _ \ / _` |',
+            '| |___| | | | |_| | | | | | | |_| | (_) | (_| |',
+            '|_____|_| |_|\__,_|_| |_| |_|\____|\___/ \__,_|'
+        ) | ForEach-Object { Write-Host $_ -ForegroundColor Cyan }
+        Write-Host '   EnumGod  Red Team Enumeration Toolkit' -ForegroundColor Green
+        Write-Host "   author : Jeet Ramoliya   module : $m" -ForegroundColor DarkGray
+        Write-Host ''
+    }
+    Banner 'secrets scanner'
     Log "[*] Invoke-RTSecretScan  ->  $run" 'Green'
 
     $patterns=@(

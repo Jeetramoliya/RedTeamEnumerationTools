@@ -1,4 +1,5 @@
 <#
+    EnumGod - Red Team Enumeration Toolkit   |   Author: Jeet Ramoliya
     Invoke-RTCloudEnum.ps1
     ============================================================================
     Red Team ENTRA ID / AZURE posture enumeration from a Windows host.
@@ -39,6 +40,19 @@ function Invoke-RTCloudEnum {
     $run=Join-Path $OutDir ("CloudEnum_{0}_{1}" -f $env:COMPUTERNAME,$stamp)
     New-Item -ItemType Directory -Path $run -Force | Out-Null
     function Save($f,$d){ $d | Out-File -FilePath (Join-Path $run $f) -Encoding UTF8 -Width 4096 }
+    function Banner($m){
+        @(
+            ' _____                        ____           _',
+            '| ____|_ __  _   _ _ __ ___  / ___| ___   __| |',
+            '|  _| | ''_ \| | | | ''_ ` _ \| |  _ / _ \ / _` |',
+            '| |___| | | | |_| | | | | | | |_| | (_) | (_| |',
+            '|_____|_| |_|\__,_|_| |_| |_|\____|\___/ \__,_|'
+        ) | ForEach-Object { Write-Host $_ -ForegroundColor Cyan }
+        Write-Host '   EnumGod  Red Team Enumeration Toolkit' -ForegroundColor Green
+        Write-Host "   author : Jeet Ramoliya   module : $m" -ForegroundColor DarkGray
+        Write-Host ''
+    }
+    Banner 'Entra ID / Azure'
     Log "[*] Invoke-RTCloudEnum  ->  $run" 'Green'
 
     $imds='169.254.169.254'

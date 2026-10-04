@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# EnumGod - Red Team Enumeration Toolkit   |   Author: Jeet Ramoliya
 # ============================================================================
 # rt-linenum.sh  -  Red Team LOCAL enumeration & privilege-escalation triage
 #                   for Linux hosts. A LinPEAS-lite with a ranked findings
@@ -82,6 +83,19 @@ has(){ command -v "$1" >/dev/null 2>&1; }
 # timeout-guard for heavy filesystem walks (prevents hangs on network mounts / proc loops)
 if has timeout; then TG(){ timeout 90 "$@"; }; else TG(){ "$@"; }; fi
 
+enumgod_banner(){
+  printf '%s' "${C:-}"
+  cat <<'ART'
+ _____                        ____           _
+| ____|_ __  _   _ _ __ ___  / ___| ___   __| |
+|  _| | '_ \| | | | '_ ` _ \| |  _ / _ \ / _` |
+| |___| | | | |_| | | | | | | |_| | (_) | (_| |
+|_____|_| |_|\__,_|_| |_| |_|\____|\___/ \__,_|
+ART
+  printf '%s   EnumGod  Red Team Enumeration Toolkit%s\n' "${G:-}" "${N:-}"
+  printf '%s   author : Jeet Ramoliya   module : %s%s\n\n' "${D:-}" "$1" "${N:-}"
+}
+enumgod_banner "Linux local privesc (linPEAS-style)"
 echo "${G}[*] rt-linenum  ->  $RUN${N}"
 echo "${D}[*] $(date)  as $(id -un 2>/dev/null)  quick=$QUICK${N}"
 

@@ -1,4 +1,14 @@
-# Red Team Enumeration Toolkit
+```
+ _____                        ____           _
+| ____|_ __  _   _ _ __ ___  / ___| ___   __| |
+|  _| | '_ \| | | | '_ ` _ \| |  _ / _ \ / _` |
+| |___| | | | |_| | | | | | | |_| | (_) | (_| |
+|_____|_| |_|\__,_|_| |_| |_|\____|\___/ \__,_|
+```
+
+# EnumGod — Red Team Enumeration Toolkit
+
+**Author: Jeet Ramoliya**
 
 A cross-platform set of **read-only** enumeration scripts for authorized red-team
 engagements and lab practice, covering **Windows, Linux, Active Directory, non-AD
