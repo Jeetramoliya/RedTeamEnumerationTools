@@ -168,6 +168,29 @@ else
       grep -qw 3389 "$RUN/03_services.txt" && flag INFO "RDP (3389) hosts present (lateral target with creds)."
       grep -qw 21   "$RUN/03_services.txt" && { flag MED "FTP (21) present - test anonymous login."; nextstep "FTP anon" "curl -s ftp://anonymous:anon@<ip>/ ; "; }
       awk '{print $3}' "$RUN/03_services.txt" | grep -qE 'HTTP|HTTPS' && flag INFO "Web services present - screenshot & dirbust (gowitness / feroxbuster)."
+
+      # ---- service VERSION banners + CVE awareness (version != vulnerable: always cross-check) ----
+      sect "Service version banners & CVE awareness"
+      : > "$RUN/05_banners.txt"
+      bannergrab(){ h="$1"; p="$2"
+        case "$p" in
+          22)   (exec 3<>"/dev/tcp/$h/22" 2>/dev/null && { head -1 <&3; exec 3<&-; }) 2>/dev/null ;;
+          21|25|110|143) (exec 3<>"/dev/tcp/$h/$p" 2>/dev/null && { head -1 <&3; exec 3<&-; }) 2>/dev/null ;;
+          80|8080|8000) has curl && curl -sI --max-time 4 "http://$h:$p/" 2>/dev/null | grep -iE '^server:|^x-powered-by:' ;;
+          443|8443) has curl && curl -skI --max-time 4 "https://$h:$p/" 2>/dev/null | grep -iE '^server:|^x-powered-by:' ;;
+        esac; }
+      # curated "banner regex -> known high-signal issue" (deterministic; still flagged POTENTIAL)
+      SVC_CVE='vsftpd 2\.3\.4=CVE-2011-2523 vsftpd 2.3.4 backdoor (RCE);ProFTPD 1\.3\.3c=ProFTPD 1.3.3c backdoor (RCE);Exim 4\.(8[0-9]|9[01])=Exim <4.92 RCE (CVE-2019-10149 family);OpenSSH_[1-7]\.=old OpenSSH (user-enum / historic RCEs - check exact version);Apache/2\.4\.49=CVE-2021-41773 path traversal/RCE;Apache/2\.4\.50=CVE-2021-42013 path traversal/RCE;Samba.* 3\.=old Samba (check CVE-2017-7494 SambaCry);nginx/1\.(1[0-7]|[0-9])\.=older nginx - check CVEs'
+      while read -r ip port lbl; do
+        [ -z "$ip" ] && continue
+        b=$(TG bannergrab "$ip" "$port" | tr -d '\r')
+        [ -n "$b" ] && echo "$ip:$port  $b" >> "$RUN/05_banners.txt"
+        IFS=';'; for pair in $SVC_CVE; do
+          rx=${pair%%=*}; msg=${pair#*=}
+          echo "$b" | grep -Eqi "$rx" && flag MED "[POTENTIAL] $ip:$port banner matches $msg - version match only; cross-check the exact version against NVD/searchsploit."
+        done; unset IFS
+      done < "$RUN/03_services.txt"
+      [ -s "$RUN/05_banners.txt" ] && { flag INFO "Captured $(wc -l < "$RUN/05_banners.txt") service banner(s) -> 05_banners.txt. For each: searchsploit <product ver> / NVD - a version is NOT proof of vulnerability."; nextstep "Cross-check service versions" "while read l; do echo \"\$l\"; done < 05_banners.txt   # then: searchsploit <product> <version>"; }
     else
       flag INFO "No open ports found on the scanned range."
     fi
