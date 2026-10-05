@@ -1,0 +1,32 @@
+[
+  {
+    "id": "RT-AD-RBCD",
+    "title": "Potential RBCD attack path to privileged account",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Active Directory",
+    "requires": ["(RBCD|AllowedToAct|resource-based)", "(MachineAccountQuota|add machine account|GenericWrite|GenericAll|WriteDacl)"],
+    "impact": "A controllable write primitive over a computer plus the ability to add/control a machine account can set up resource-based constrained delegation and impersonate a privileged user to that host.",
+    "remediation": "Set ms-DS-MachineAccountQuota=0; remove non-default write rights on computer objects; audit msDS-AllowedToActOnBehalfOfOtherIdentity.",
+    "description": "RBCD prerequisites observed together: a write primitive over a computer object AND the ability to create/control a machine account. Chain may enable impersonation to the target computer."
+  },
+  {
+    "id": "RT-AD-ACLCHAIN",
+    "title": "Chained ACL path toward a privileged group",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Active Directory",
+    "requires": ["(GenericWrite|GenericAll|WriteDacl|WriteOwner|WriteProperty)", "(adminCount|Domain Admins|Enterprise Admins|privileged group)"],
+    "impact": "A write right over an object that is itself a member of (or can modify) a privileged group can be chained to add a controlled principal to that group.",
+    "remediation": "Review and remove non-default write ACEs on admin-protected objects; enable AdminSDHolder review.",
+    "description": "A dangerous write ACE was observed together with a privileged-group reference on the same domain; the ACE may be chainable toward that group."
+  },
+  {
+    "id": "RT-AD-DELEG-UNUSUAL",
+    "title": "Unusual delegation + credential-exposure combination",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "RESEARCH_CANDIDATE",
+    "category": "Active Directory",
+    "requires": ["(unconstrained delegation|constrained delegation)", "(LAPS|gMSA|readable|cpassword|kerberoast)"],
+    "impact": "Delegation combined with a nearby credential-read primitive can create an unexpected privilege boundary crossing that is not captured by a single-finding detection.",
+    "remediation": "Treat delegation hosts as tier-0; remove nearby credential-read exposure; validate the delegation target set.",
+    "description": "Delegation and a credential-exposure primitive co-occur on the same host. The combination is worth manual review as an unrecognized attack path."
+  }
+]

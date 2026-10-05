@@ -1,0 +1,12 @@
+[
+  {
+    "id": "RT-CLOUD-CONFUSED-DEPUTY",
+    "title": "Instance identity reachable with cross-service access (confused-deputy style)",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "RESEARCH_CANDIDATE",
+    "category": "Cloud",
+    "requires": ["(managed identity|IMDS|role credential|instance metadata)", "(key vault|secret|s3|storage|role assignment|cloud-platform|Owner|Contributor)"],
+    "impact": "A reachable instance identity with broad downstream access can enable a confused-deputy or privilege-escalation chain across cloud services.",
+    "remediation": "Least-privilege the instance role; enforce IMDSv2/hop-limit 1; scope resource access.",
+    "description": "A reachable cloud instance identity co-occurs with broad resource access; review the cross-service permission chain."
+  }
+]

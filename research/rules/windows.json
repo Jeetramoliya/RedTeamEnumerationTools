@@ -1,0 +1,22 @@
+[
+  {
+    "id": "RT-WIN-SVC2SYS",
+    "title": "Writable service component with SYSTEM impersonation primitive",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Windows Privilege Escalation",
+    "requires": ["(writable service (binary|dir|registry)|unquoted service|service registry)", "(SeImpersonate|potato|runs as SYSTEM|RUNS_AS)"],
+    "impact": "A writable service component plus a token-impersonation primitive is a strong local path to SYSTEM.",
+    "remediation": "Remove non-admin write on the service path/keys; remove SeImpersonate from the service account where possible.",
+    "description": "A writable service component co-occurs with an impersonation primitive; chain likely yields SYSTEM."
+  },
+  {
+    "id": "RT-WIN-DLL-PATH",
+    "title": "Writable PATH/app directory with a privileged consumer",
+    "severity": "MEDIUM", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Windows Privilege Escalation",
+    "requires": ["(writable PATH|writable service dir|DLL hijack)", "(service|scheduled task|runs as|SYSTEM|admin)"],
+    "impact": "A writable directory searched by a privileged process may allow DLL/binary hijack.",
+    "remediation": "Remove write for non-admins on directories searched by privileged processes.",
+    "description": "A writable search-path directory co-occurs with a privileged consumer; review for DLL hijack."
+  }
+]

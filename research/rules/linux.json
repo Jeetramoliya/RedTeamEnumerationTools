@@ -1,0 +1,22 @@
+[
+  {
+    "id": "RT-LNX-CFG-RELOAD",
+    "title": "Writable config consumed by a privileged service with a reload mechanism",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "RESEARCH_CANDIDATE",
+    "category": "Linux Privilege Escalation",
+    "requires": ["(writable .*(config|/etc|profile|systemd|ld\\.so|service))", "(root|privileged service|systemd|cron|reload|LD_PRELOAD)"],
+    "impact": "A writable configuration file consumed by a root service that reloads it can become code execution as root; the combination may not be covered by a single-finding detector.",
+    "remediation": "Restrict write on the config; confirm the service's reload behavior; run the service least-privileged.",
+    "description": "A writable config path co-occurs with a privileged service/reload mechanism - review as an unrecognized local-root path."
+  },
+  {
+    "id": "RT-LNX-CONTAINER-ESCAPE",
+    "title": "Container boundary weakness with host primitive",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Container",
+    "requires": ["(container|docker|kubernetes|cgroup)", "(docker\\.sock|CAP_SYS_ADMIN|privileged|no_root_squash|/host|hostPath)"],
+    "impact": "A container context with a host-reaching primitive is a likely escape to the node.",
+    "remediation": "Drop CAP_SYS_ADMIN; do not expose the docker socket; avoid hostPath/privileged pods.",
+    "description": "Containerization co-occurs with a host-reaching primitive; review for node escape."
+  }
+]

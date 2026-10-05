@@ -89,11 +89,32 @@ echo "[*] modules run=$MODRUN ok=${#MODOK[@]} failed=${#MODFAIL[@]}"
 [ "${#MODFAIL[@]}" -gt 0 ] && { echo "[!] failed modules:"; printf '    - %s\n' "${MODFAIL[@]}"; }
 { echo "run id: $RUNID"; echo "modules_run: $MODRUN"; echo "modules_ok: ${MODOK[*]}"; echo "modules_failed: ${MODFAIL[*]:-none}"; } > "$MASTER/RUN_SUMMARY.txt"
 
-echo "[*] building consolidated report..."
-if command -v python3 >/dev/null 2>&1 && [ -f "$ROOT/tools/eg-report.py" ]; then
-  python3 "$ROOT/tools/eg-report.py" "$MASTER" -o "$MASTER/EnumGod-report.html" --save-merged "$MASTER/merged.json" --title "EnumGod - $(hostname 2>/dev/null) - $TS"
+# ---- ONE merged raw-output file (every module's summary + dumps) for manual review / script tuning ----
+MERGED="$MASTER/EnumGod_MERGED.txt"
+{
+  echo "######################################################################"
+  echo "# EnumGod merged output  -  run $RUNID  -  $(date)"
+  echo "# Modules ok: ${MODOK[*]:-none}    failed: ${MODFAIL[*]:-none}"
+  echo "######################################################################"
+  find "$MASTER" -mindepth 2 -type f \( -name '0*_*.txt' -o -name 'NEXT_STEPS.txt' -o -name '*_matches.txt' \) 2>/dev/null | sort | while IFS= read -r f; do
+    echo; echo "==================== ${f#"$MASTER"/} ===================="; cat "$f" 2>/dev/null
+  done
+} > "$MERGED" 2>/dev/null
+chmod 600 "$MERGED" 2>/dev/null
+echo "[+] merged raw output: $MERGED"
+
+echo "[*] building consolidated report + analysis..."
+PY=""; command -v python3 >/dev/null 2>&1 && PY=python3; [ -z "$PY" ] && command -v python >/dev/null 2>&1 && PY=python
+if [ -n "$PY" ] && [ -f "$ROOT/tools/eg-report.py" ]; then
+  "$PY" "$ROOT/tools/eg-report.py" "$MASTER" -o "$MASTER/EnumGod-report.html" --save-merged "$MASTER/merged.json" --title "EnumGod - $(hostname 2>/dev/null) - $TS" || true
   echo "[+] report: $MASTER/EnumGod-report.html"
-  echo "[i] next hop: re-run, then  python3 tools/eg-report.py <new-master> --diff $MASTER/merged.json  to see NEW access."
-else
-  echo "[i] python3 not found - per-module 00_SUMMARY.txt files are under $MASTER"
+fi
+# full analysis pipeline (graph / attack-paths / anomalies / research / SARIF)
+if [ -n "$PY" ] && [ -f "$ROOT/research/eg_analyze.py" ]; then
+  RARGS=""; [ "$ACTIVE" = 1 ] && RARGS="$RARGS"   # research is read-only; active handled per-module above
+  "$PY" "$ROOT/research/eg_analyze.py" "$MASTER" --out "$MASTER/EnumGod-analysis" --output-format html,json,sarif,csv $RARGS || true
+  echo "[+] analysis: $MASTER/EnumGod-analysis.html (+ .json/.sarif/.csv)"
+  echo "[i] next hop: re-run, then  $PY research/eg_analyze.py <new-master> --baseline $MASTER/merged.json  for the diff."
+elif [ -z "$PY" ]; then
+  echo "[i] python not found - see per-module 00_SUMMARY.txt and $MERGED"
 fi

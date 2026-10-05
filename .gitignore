@@ -33,3 +33,9 @@ findings.json
 Thumbs.db
 *.swp
 *~
+
+# analysis engine artifacts
+enumgod-analysis.*
+EnumGod-analysis.*
+EnumGod_MERGED.txt
+*.sarif

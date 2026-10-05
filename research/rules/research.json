@@ -1,0 +1,12 @@
+[
+  {
+    "id": "RT-RESEARCH-AUTHZ",
+    "title": "Authorization inconsistency across identities/protocols",
+    "severity": "MEDIUM", "confidence": "POTENTIAL", "novelty": "RESEARCH_CANDIDATE",
+    "category": "Research",
+    "any": ["anonymous .*(read|bind|answers)", "null session", "unauthenticated .*(admin|command|answers|PONG)", "authorization inconsistency", "different .*authorization"],
+    "impact": "An access-control inconsistency (anonymous/unauth path, or differing authorization across protocols/identities) may expose a privilege boundary that no single detector flags.",
+    "remediation": "Require authentication; align authorization across protocols/roles; re-test the inconsistent path.",
+    "description": "An authorization/authentication inconsistency was observed. No matching known vulnerability identified by the local knowledge base; manual research and validation required."
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "nodes": [
+    {"id": "user:USER_A", "type": "User", "label": "USER_A (low priv)"},
+    {"id": "group:GROUP_A", "type": "Group", "label": "GROUP_A"},
+    {"id": "computer:COMPUTER_A", "type": "Computer", "label": "COMPUTER_A"},
+    {"id": "service:SERVICE_A", "type": "Service", "label": "SERVICE_A"},
+    {"id": "account:ADMIN_A", "type": "Account", "label": "Domain Admin ADMIN_A", "privileged": true}
+  ],
+  "edges": [
+    {"src": "user:USER_A", "dst": "group:GROUP_A", "type": "MEMBER_OF"},
+    {"src": "group:GROUP_A", "dst": "computer:COMPUTER_A", "type": "CAN_WRITE"},
+    {"src": "computer:COMPUTER_A", "dst": "service:SERVICE_A", "type": "RUNS_AS"},
+    {"src": "service:SERVICE_A", "dst": "account:ADMIN_A", "type": "CAN_IMPERSONATE"}
+  ]
+}
