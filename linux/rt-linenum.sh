@@ -222,8 +222,9 @@ if runs cve kernel vuln; then
         command -v rpm >/dev/null 2>&1 && rpm -q --changelog "$p" 2>/dev/null | grep -qi "$cve" && return 0
       done; return 1; }
     : > "$RUN/.conf"; : > "$RUN/.pot"; : > "$RUN/.aw"; CN=0; PN=0; AWN=0; BK=0
+    RUNCVER=$(runc --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
     while IFS='|' read -r os cve name typ mn mx sev expl note fixed precond; do
-      case "$os" in linux|glibc|sudo|polkit) ;; *) continue;; esac
+      case "$os" in linux|glibc|sudo|polkit|runc) ;; *) continue;; esac
       if [ "$mn" = "kev" ]; then AWN=$((AWN+1)); echo "$cve|$name|$note" >> "$RUN/.aw"; continue; fi
       # version/build in affected range?
       inr=0
@@ -232,37 +233,41 @@ if runs cve kernel vuln; then
         glibc)  inrange "$GVER" "$mn" "$mx" && inr=1;;
         sudo)   [ -n "$SVER" ] && inrange "$SVER" "$mn" "$mx" && inr=1;;
         polkit) [ -u /usr/bin/pkexec ] 2>/dev/null && inr=1;;
+        runc)   [ -n "$RUNCVER" ] && inrange "$RUNCVER" "$mn" "$mx" && inr=1;;
       esac
       [ "$inr" = "1" ] || continue
-      X=""; [ "$expl" = "yes" ] && { X=" *in-the-wild*"; sev=HIGH; }
+      X=""; [ "$expl" = "yes" ] && { X=" *in-the-wild*"; }
       PKGS=$(pkg_for "$os")
-      # AUTHORITATIVE: distro backported the fix (changelog records this CVE) -> NOT vulnerable
+      # ---- cross-check from EVERY available signal, don't trust the version string alone ----
+      # SIGNAL 1 (authoritative): distro backported the fix (changelog records this CVE) -> PATCHED
       if [ -n "$PKGS" ] && cve_backported "$cve" "$PKGS"; then BK=$((BK+1)); continue; fi
-      # precondition gate
-      if [ "$precond" = "userns" ] && [ "$USERNS" = "0" ]; then continue; fi          # not exploitable -> suppress
-      # sudo / glibc / polkit: confirm only when a changelog is readable AND the CVE is NOT in it
-      if [ "$os" = "sudo" ] || [ "$os" = "glibc" ] || [ "$os" = "polkit" ]; then
-        if have_changelog "$PKGS"; then
-          flag "$sev" "CONFIRMED $cve ($name)$X - $os $([ "$os" = sudo ] && echo "$SVER"; [ "$os" = glibc ] && echo "$GVER") affected and no distro backport in changelog -> $note."
-          echo "$cve|CONFIRMED ($os affected, no backport in changelog)|$note" >> "$RUN/.conf"; CN=$((CN+1))
-        else
-          echo "$cve|$name|$note ($os in range; no changelog to confirm backport - verify distro tracker)" >> "$RUN/.pot"; PN=$((PN+1))
-        fi
-        continue
-      fi
-      # kernel: fix-date gate (build after fix month => backport) then confirm
+      # SIGNAL 2: precondition not satisfiable -> NOT exploitable -> suppress
+      if [ "$precond" = "userns" ] && [ "$USERNS" = "0" ]; then continue; fi
+      # SIGNAL 3: kernel build date vs fix month (a strong "is the running kernel actually old" signal)
+      PATCHED_BY_DATE=0; OLD_BY_DATE=0
       if [ "$os" = "linux" ] && [ -n "$KBUILD" ] && [ -n "$fixed" ]; then
-        if [ "$KBUILD" \> "$fixed" ] || [ "$KBUILD" = "$fixed" ]; then continue; fi    # patched (built after fix)
-        flag "$sev" "CONFIRMED $cve ($name)$X - kernel $KVER built $KBUILD predates fix $fixed, no backport in changelog$([ "$precond" = userns ] && echo ', unpriv-userns ON') -> $note."
-        echo "$cve|CONFIRMED (built $KBUILD < fix $fixed)|$note" >> "$RUN/.conf"; CN=$((CN+1)); continue
+        if { [ "$KBUILD" \> "$fixed" ] || [ "$KBUILD" = "$fixed" ]; }; then PATCHED_BY_DATE=1; else OLD_BY_DATE=1; fi
       fi
-      # kernel but build date unknown -> cannot confirm offline
-      echo "$cve|$name|$note (kernel in range; build date unknown - verify distro tracker)" >> "$RUN/.pot"; PN=$((PN+1))
+      [ "$PATCHED_BY_DATE" = 1 ] && { BK=$((BK+1)); continue; }   # kernel built after the fix -> patched
+      # VERDICT:
+      #   CONFIRMED  -> only when MULTIPLE strong signals agree (old-by-build-date kernel + precond ok).
+      #                 version-string / binary-presence alone is NEVER enough (defeats the PwnKit/sudo
+      #                 version-only false positive).
+      #   VERSION_MATCH -> affected version present but NOT confirmed exploitable (verify / --validate).
+      if [ "$os" = "linux" ] && [ "$OLD_BY_DATE" = 1 ]; then
+        flag "$sev" "CONFIRMED $cve ($name)$X - kernel $KVER built $KBUILD predates fix $fixed; not backported in changelog$([ "$precond" = userns ] && echo '; unpriv-userns ON') -> $note."
+        echo "$cve|CONFIRMED (kernel built $KBUILD < fix $fixed + preconditions)|$note" >> "$RUN/.conf"; CN=$((CN+1)); continue
+      fi
+      # everything else: VERSION_MATCH only - explicitly NOT a confirmed vuln
+      why="affected version present"
+      [ "$os" = "polkit" ] && why="setuid pkexec present (version-only - distro backport NOT verifiable from upstream version)"
+      [ "$os" = "linux" ] && why="kernel in range but build date unknown"
+      echo "$cve|VERSION_MATCH NOT-CONFIRMED ($why)|$note | cross-check: compare the distro PACKAGE version to the distro's fixed version, or run a safe PoC in a lab" >> "$RUN/.pot"; PN=$((PN+1))
     done < "$CVEDB"
-    [ "$BK" -gt 0 ] && flag INFO "$BK matched CVE(s) are patched via distro backport (changelog-confirmed) and were suppressed."
+    [ "$BK" -gt 0 ] && flag INFO "$BK matched CVE(s) are patched (distro backport / kernel built after fix) and were suppressed."
     [ "$CN" -gt 0 ] && cp "$RUN/.conf" "$RUN/01b_cve_confirmed.txt"
     [ "$CN" -eq 0 ] && flag INFO "No CVE could be CONFIRMED vulnerable on this host (patched or preconditions not met)."
-    if [ "$PN" -gt 0 ]; then { echo "# in-range but UNCONFIRMED offline (verify against your distro security tracker)"; cat "$RUN/.pot"; } > "$RUN/01c_cve_potential.txt"; flag INFO "$PN in-range CVE(s) could not be confirmed offline -> 01c_cve_potential.txt (not counted as findings)."; fi
+    if [ "$PN" -gt 0 ]; then { echo "# VERSION_MATCH - affected version present but NOT confirmed vulnerable."; echo "# A version/binary match is NOT proof: distros backport fixes while keeping the version string"; echo "# (e.g. Ubuntu sudo 1.9.15p5 / polkit pkexec CVE-2021-4034). Cross-check the distro PACKAGE"; echo "# version against the distro's fixed version, or validate safely in a lab before relying on these."; echo; cat "$RUN/.pot"; } > "$RUN/01c_cve_version_match.txt"; flag INFO "$PN CVE(s) match by version but are NOT confirmed vulnerable (e.g. PwnKit/sudo need package-version cross-check) -> 01c_cve_version_match.txt (NOT findings)."; fi
     [ "$AWN" -gt 0 ] && { cp "$RUN/.aw" "$RUN/01d_cve_latest_feed.txt"; flag INFO "$AWN latest actively-exploited feed CVE(s) -> 01d_cve_latest_feed.txt (awareness, not host-matched)."; }
     [ "$CN" -gt 0 ] && nextstep "Exploit a CONFIRMED CVE" "# fetch a PoC for the CONFIRMED CVE(s) in 01b_cve_confirmed.txt (verify kernel exactly first)"
     rm -f "$RUN/.conf" "$RUN/.pot" "$RUN/.aw" 2>/dev/null
