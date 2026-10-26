@@ -119,6 +119,11 @@ if [ -n "$ROOT" ]; then
   echo "$ROOT" | grep -qi 'Microsoft' && PROD="Active Directory (use rt-adenum.sh instead)"
   : "${PROD:=generic LDAP}"
   flag INFO "Detected product: $PROD   (base: ${BASE:-<unknown>})"
+  case "$PROD" in
+    *Oracle*|*OUD*|*OID*) [ -n "$VVER" ] && flag INFO "Oracle directory version '$VVER' - VERSION_MATCH only: cross-check against Oracle CPU advisories (OUD/OID/WebLogic CVEs); a banner version is NOT proof of vulnerability.";;
+    *389*|*FreeIPA*) [ -n "$VVER" ] && flag INFO "389-DS/FreeIPA version '$VVER' - cross-check Red Hat errata (RHSA) for this exact package build.";;
+    *OpenLDAP*) [ -n "$VVER" ] && flag INFO "OpenLDAP version '$VVER' - cross-check slapd CVEs against the distro PACKAGE version (backports apply).";;
+  esac
 else
   flag MED "No RootDSE returned - server may require auth, or anonymous bind is disabled."
 fi

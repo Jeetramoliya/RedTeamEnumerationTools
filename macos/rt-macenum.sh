@@ -54,6 +54,8 @@ sect "System & security posture"
   echo "== Gatekeeper =="; spctl --status 2>/dev/null
   echo "== FileVault =="; fdesetup status 2>/dev/null
 } | save 01_system.txt
+OSVER=$(sw_vers -productVersion 2>/dev/null); OSBUILD=$(sw_vers -buildVersion 2>/dev/null)
+[ -n "$OSVER" ] && flag INFO "macOS $OSVER (build $OSBUILD) - VERSION_MATCH only: cross-check this exact build against known local-privesc CVEs (e.g. recent CVE-2023-32369 'Migraine' SIP bypass, CVE-2024-23222-era WebKit, TCC bypasses). macOS updates are cumulative: a version is NOT proof - confirm the build predates the fixing update."
 csrutil status 2>/dev/null | grep -qi 'disabled' && flag HIGH "System Integrity Protection (SIP) is DISABLED -> far wider privesc/persistence surface."
 spctl --status 2>/dev/null | grep -qi 'disabled' && flag MED "Gatekeeper disabled -> unsigned binaries run freely."
 fdesetup status 2>/dev/null | grep -qi 'Off' && flag MED "FileVault is OFF -> disk at rest is unencrypted."

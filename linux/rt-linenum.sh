@@ -206,8 +206,9 @@ if runs cve kernel vuln; then
     pkg_for(){ case "$1" in
       sudo) echo sudo;;
       glibc) echo "libc6 glibc glibc-common";;
-      polkit) echo "policykit-1 polkit pkexec";;
-      linux) echo "linux-image-$(uname -r 2>/dev/null) linux-image-generic linux-image-azure linux";;
+      polkit) echo "policykit-1 polkit polkit-1 pkexec";;
+      linux) echo "linux-image-$(uname -r 2>/dev/null) linux-image-generic linux-image-azure linux kernel kernel-core kernel-default";;
+      runc) echo "runc containerd.io docker-ce moby-runc";;
     esac; }
     # is a package changelog available for at least one of these pkgs? (so absence of CVE is meaningful)
     have_changelog(){ for p in $1; do

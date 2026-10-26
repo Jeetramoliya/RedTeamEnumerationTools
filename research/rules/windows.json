@@ -18,5 +18,16 @@
     "impact": "A writable directory searched by a privileged process may allow DLL/binary hijack.",
     "remediation": "Remove write for non-admins on directories searched by privileged processes.",
     "description": "A writable search-path directory co-occurs with a privileged consumer; review for DLL hijack."
+  },
+  {
+    "id": "RT-WIN-BACKUP-NTDS",
+    "title": "Backup/Restore privilege on a domain-reachable host -> NTDS/hive dump",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Windows Privilege Escalation",
+    "requires": ["(SeBackup|SeRestore)"],
+    "any": ["DnsAdmins", "domain controller", "DCSync", "ntds", "AD CS", "LAPS", "gMSA"],
+    "impact": "SeBackupPrivilege lets a non-admin read any file (SAM/SYSTEM, or NTDS.dit on a DC) -> offline secret extraction -> domain credentials.",
+    "remediation": "Remove SeBackup/SeRestore from non-tier-0 principals; monitor volume-shadow and raw-hive reads.",
+    "description": "A backup/restore privilege co-occurs with domain-sensitive context. Chain: read SAM/SYSTEM (or NTDS.dit on a DC) via the privilege -> secretsdump offline -> credentials."
   }
 ]

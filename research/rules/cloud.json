@@ -18,5 +18,15 @@
     "impact": "An AAD Connect sync server is tier-0: its MSOL_/sync account typically holds directory-replication rights (DCSync on-prem) and the sync bridges on-prem AD and Entra, enabling cross-boundary identity compromise.",
     "remediation": "Treat the AAD Connect host as a Domain Controller (tier-0); restrict logon; rotate the MSOL_ account; monitor ADSync DB access.",
     "description": "Azure AD Connect (ADSync) present. Chain: compromise the sync host -> extract MSOL_/sync creds -> DCSync on-prem and/or manipulate cloud identities. End impact: on-prem + cloud identity pivot."
+  },
+  {
+    "id": "RT-CLOUD-CLI-PRIVESC",
+    "title": "Reusable cloud CLI session with privilege-escalation-prone permissions",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Cloud",
+    "requires": ["(authenticated|az CLI|gcloud authenticated|CLI is already authenticated)", "(privesc-prone|PassRole|AssumeRole|Owner|Contributor|User Access Administrator|tokenCreator|setIamPolicy|AdministratorAccess)"],
+    "impact": "An already-authenticated cloud CLI session combined with privesc-prone IAM rights is a direct path to cloud administrator (e.g. iam:PassRole, role assignment, serviceAccountTokenCreator).",
+    "remediation": "Least-privilege the identity; remove PassRole/role-assignment/token-creation unless required; rotate the CLI session.",
+    "description": "A reusable cloud CLI session co-occurs with privesc-prone permissions; chain the two to escalate to cloud administrator."
   }
 ]
