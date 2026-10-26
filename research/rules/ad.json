@@ -28,5 +28,26 @@
     "impact": "Delegation combined with a nearby credential-read primitive can create an unexpected privilege boundary crossing that is not captured by a single-finding detection.",
     "remediation": "Treat delegation hosts as tier-0; remove nearby credential-read exposure; validate the delegation target set.",
     "description": "Delegation and a credential-exposure primitive co-occur on the same host. The combination is worth manual review as an unrecognized attack path."
+  },
+  {
+    "id": "RT-AD-UNCONSTRAINED-COERCE",
+    "title": "Unconstrained delegation + coercion path to Domain Admin",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Active Directory",
+    "requires": ["unconstrained delegation"],
+    "impact": "A host with unconstrained delegation that can be made to authenticate (PetitPotam/PrinterBug/DFSCoerce) yields a DC TGT -> DCSync -> Domain Admin.",
+    "remediation": "Remove unconstrained delegation; patch/disable coercion RPCs (MS-EFSRPC/MS-RPRN); mark DCs 'Account is sensitive and cannot be delegated'.",
+    "description": "Unconstrained delegation observed. Chain: coerce a privileged machine (e.g. a DC) to auth -> capture its TGT on the delegation host -> DCSync. End impact: Domain Admin."
+  },
+  {
+    "id": "RT-AD-ESC8-RELAY",
+    "title": "AD CS present + relayable auth -> ESC8 web-enrollment relay",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Active Directory",
+    "requires": ["AD CS enterprise CA"],
+    "any": ["unconstrained delegation", "SMB.*sign", "signing not required", "LLMNR|NBT-NS|mDNS", "null session", "coerce"],
+    "impact": "An enterprise CA plus a coercible/relayable auth path enables ESC8: relay a coerced DC to the CA web-enrollment endpoint, obtain a DC certificate, then TGT -> DCSync.",
+    "remediation": "Enable EPA + require HTTPS on CA web enrollment; enforce SMB/LDAP signing; disable NTLM where possible; patch coercion RPCs.",
+    "description": "AD CS enterprise CA co-occurs with a relayable/coercible authentication condition. Review for ESC8 (web-enrollment NTLM relay) to a domain-controller certificate."
   }
 ]

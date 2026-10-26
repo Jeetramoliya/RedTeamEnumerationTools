@@ -8,5 +8,15 @@
     "impact": "A reachable instance identity with broad downstream access can enable a confused-deputy or privilege-escalation chain across cloud services.",
     "remediation": "Least-privilege the instance role; enforce IMDSv2/hop-limit 1; scope resource access.",
     "description": "A reachable cloud instance identity co-occurs with broad resource access; review the cross-service permission chain."
+  },
+  {
+    "id": "RT-CLOUD-AADCONNECT-HYBRID",
+    "title": "AAD Connect sync server -> on-prem <-> cloud identity pivot",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Hybrid Identity",
+    "requires": ["(Azure AD Connect|ADSync)"],
+    "impact": "An AAD Connect sync server is tier-0: its MSOL_/sync account typically holds directory-replication rights (DCSync on-prem) and the sync bridges on-prem AD and Entra, enabling cross-boundary identity compromise.",
+    "remediation": "Treat the AAD Connect host as a Domain Controller (tier-0); restrict logon; rotate the MSOL_ account; monitor ADSync DB access.",
+    "description": "Azure AD Connect (ADSync) present. Chain: compromise the sync host -> extract MSOL_/sync creds -> DCSync on-prem and/or manipulate cloud identities. End impact: on-prem + cloud identity pivot."
   }
 ]
