@@ -355,6 +355,24 @@ def write_csv(path, finds):
         for f in finds:
             w.writerow({c: f.get(c, "") for c in cols})
 
+def write_blue(path, finds):
+    # defender view: group by ATT&CK technique, list what to detect + fix. Reuses existing data.
+    by_tid = {}
+    for f in finds:
+        tid = f.get("attack") or "unmapped"
+        by_tid.setdefault(tid, []).append(f)
+    lines = ["# EnumGod blue-team report", "",
+             "What an attacker could do here, and what to detect/remediate. Generated from the same findings.", ""]
+    for tid in sorted(by_tid):
+        lines.append(f"## {tid}")
+        for f in sorted(by_tid[tid], key=lambda x: EGR.SEV_ORDER.get(x['severity'], 9)):
+            rem = EGR.remediation_text(f.get("description", "")) or f.get("remediation", "") or "Review and apply least privilege."
+            lines.append(f"- **[{f['severity']}/{f['confidence']}] {f['host']}** - {f.get('title','')}")
+            lines.append(f"  - Remediate: {rem}")
+            lines.append(f"  - Detect: alert on activity matching {tid} on {f['host']} (see docs/DETECTION.md).")
+        lines.append("")
+    open(path, "w", encoding="utf-8").write("\n".join(lines))
+
 def write_sarif(path, finds):
     rules_seen, results = {}, []
     for f in finds:
@@ -520,6 +538,8 @@ def main():
             write_sarif(a.out + ".sarif", all_items)
         if "csv" in fmts:
             write_csv(a.out + ".csv", all_items)
+        if "blue" in fmts:
+            write_blue(a.out + "-blue.md", all_items)
     except Exception as e:
         print(f"[-] report write failed: {e}", file=sys.stderr)
         sys.exit(2)

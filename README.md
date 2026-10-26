@@ -304,6 +304,37 @@ independent dimension. `--diff` marks findings new since a prior merged run.
 PowerShell modules: `0` success, `2` error. The orchestrator treats `>=2` (or invalid JSON) as a
 module failure, records it in `RUN_SUMMARY.txt`, and continues the rest of the assessment.
 
+## Deploy & integrate
+
+**Docker** (runs the *nix modules + analysis; no local Python/tooling needed):
+```bash
+docker build -t enumgod .
+docker run --rm -v "$PWD/loot:/loot" enumgod bash run/run-all.sh -o /loot
+docker run --rm -v "$PWD/loot:/loot" enumgod python3 research/eg_analyze.py /loot --out /loot/analysis --output-format html,json,sarif,blue
+```
+
+**GitHub Action** — drop findings analysis + SARIF into your pipeline / Security tab:
+```yaml
+- uses: Jeetramoliya/RedTeamEnumerationTools@main
+  with: { findings: ./loot, out: enumgod }
+```
+
+**Continuous monitoring** (`run/watch.sh`) — re-run on an interval, diff, and alert NEW findings:
+```bash
+./run/watch.sh --interval 3600 --out /var/eg --webhook https://hooks.slack.com/...   # or Discord
+./run/watch.sh --once -- --net 10.0.0.0/24     # single cycle for cron; args after -- go to run-all
+```
+
+**Dashboard** — open [`docs/dashboard.html`](docs/dashboard.html) and drop one or more analysis
+`*.json` files to aggregate findings/attack-paths/research-candidates across hosts (static, offline).
+
+**Blue-team output** — `--output-format blue` emits a defender report (ATT&CK-grouped, detect+remediate).
+
+**Community rules** — drop a JSON pack into [`research/rules/community/`](research/rules/community/);
+it auto-loads. Schema + contribution guide: [`research/rules/RULES.md`](research/rules/RULES.md).
+
+**See it first** — sample report (synthetic data): [`docs/samples/sample-analysis.html`](docs/samples/sample-analysis.html).
+
 ## Core loop
 
 ```

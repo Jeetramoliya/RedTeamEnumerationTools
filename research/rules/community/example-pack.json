@@ -1,0 +1,12 @@
+[
+  {
+    "id": "RT-K8S-SA-NODE",
+    "title": "Pod service-account token + node-escape primitive",
+    "severity": "HIGH", "confidence": "POTENTIAL", "novelty": "CORRELATED_PATTERN",
+    "category": "Kubernetes",
+    "requires": ["service-account token", "(create pods|hostPath|privileged|docker.sock|node root)"],
+    "impact": "A usable pod service-account token plus a pod-create / hostPath / privileged primitive is a path from pod to node (host) root.",
+    "remediation": "Scope the service account (RBAC); block hostPath/privileged pods via admission policy; restrict docker.sock.",
+    "description": "EXAMPLE COMMUNITY RULE. A pod SA token co-occurs with a node-escape primitive; chain to node root. Copy this file to start your own pack."
+  }
+]

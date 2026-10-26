@@ -39,3 +39,7 @@ enumgod-analysis.*
 EnumGod-analysis.*
 EnumGod_MERGED.txt
 *.sarif
+
+# python cache
+__pycache__/
+*.pyc

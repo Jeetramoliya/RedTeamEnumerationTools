@@ -1,0 +1,604 @@
+{
+  "schema": "enumgod-analysis/1",
+  "generated": "2026-10-26T09:07:34.622751",
+  "sources": [
+    "C:/Users/Hp/AppData/Local/Temp/claude/C--Users-Hp-Downloads-Red-Team/d99a2aed-a0d7-4dad-9e52-17eb39f82ced/scratchpad/sample\\Invoke-RTEnum_WS01_x\\findings.json",
+    "C:/Users/Hp/AppData/Local/Temp/claude/C--Users-Hp-Downloads-Red-Team/d99a2aed-a0d7-4dad-9e52-17eb39f82ced/scratchpad/sample\\rt-adenum_DC01_x\\findings.json",
+    "C:/Users/Hp/AppData/Local/Temp/claude/C--Users-Hp-Downloads-Red-Team/d99a2aed-a0d7-4dad-9e52-17eb39f82ced/scratchpad/sample\\rt-cloudenum_H_x\\findings.json"
+  ],
+  "assets": [
+    {
+      "host": "WS01",
+      "findings": 3,
+      "sources": [
+        "Invoke-RTEnum"
+      ],
+      "max_sev": "HIGH"
+    },
+    {
+      "host": "DC01",
+      "findings": 4,
+      "sources": [
+        "rt-adenum"
+      ],
+      "max_sev": "HIGH"
+    },
+    {
+      "host": "SYNC01",
+      "findings": 1,
+      "sources": [
+        "Invoke-RTCloudEnum"
+      ],
+      "max_sev": "HIGH"
+    }
+  ],
+  "findings": [
+    {
+      "id": "RT-CRED-035c",
+      "title": "Token holds SeBackupPrivilege (Enabled): Read any file -> dump SAM/SYSTEM/NTDS.dit",
+      "severity": "HIGH",
+      "confidence": "LIKELY",
+      "category": "CRED",
+      "host": "WS01",
+      "port": null,
+      "source": "Invoke-RTEnum",
+      "description": "Token holds SeBackupPrivilege (Enabled): Read any file -> dump SAM/SYSTEM/NTDS.dit",
+      "evidence": "Token holds SeBackupPrivilege (Enabled): Read any file -> dump SAM/SYSTEM/NTDS.dit",
+      "impact": "SAM",
+      "remediation": "Apply the fixing update; fix config\\SAM ACLs; delete exposing VSS copies.",
+      "attack": "T1003.002",
+      "active_check": false,
+      "timestamp": "",
+      "novelty": "KNOWN_PATTERN"
+    },
+    {
+      "id": "RT-PRIV-71c0",
+      "title": "Writable service binary: FooSvc",
+      "severity": "HIGH",
+      "confidence": "LIKELY",
+      "category": "PRIV",
+      "host": "WS01",
+      "port": null,
+      "source": "Invoke-RTEnum",
+      "description": "Writable service binary: FooSvc",
+      "evidence": "Writable service binary: FooSvc",
+      "impact": "Windows Service",
+      "remediation": "Remove non-admin write on service dirs / PATH.",
+      "attack": "T1543.003",
+      "active_check": false,
+      "timestamp": "",
+      "novelty": "KNOWN_PATTERN"
+    },
+    {
+      "id": "RT-CRED-ba5a",
+      "title": "WDigest UseLogonCredential=1 - CLEARTEXT passwords cached in LSASS",
+      "severity": "MEDIUM",
+      "confidence": "LIKELY",
+      "category": "CRED",
+      "host": "WS01",
+      "port": null,
+      "source": "Invoke-RTEnum",
+      "description": "WDigest UseLogonCredential=1 - CLEARTEXT passwords cached in LSASS",
+      "evidence": "WDigest UseLogonCredential=1 - CLEARTEXT passwords cached in LSASS",
+      "impact": "LSASS memory",
+      "remediation": "Enable LSA PPL + Credential Guard; set WDigest UseLogonCredential=0.",
+      "attack": "T1003.001",
+      "active_check": false,
+      "timestamp": "",
+      "novelty": "KNOWN_PATTERN"
+    },
+    {
+      "id": "RT-AD-8f89",
+      "title": "Unconstrained delegation (computer): WS01 - coerce + capture DC TGT (printerbug/petitpotam)",
+      "severity": "HIGH",
+      "confidence": "LIKELY",
+      "category": "AD",
+      "host": "DC01",
+      "port": null,
+      "source": "rt-adenum",
+      "description": "Unconstrained delegation (computer): WS01 - coerce + capture DC TGT (printerbug/petitpotam)",
+      "evidence": "Unconstrained delegation (computer): WS01 - coerce + capture DC TGT (printerbug/petitpotam)",
+      "impact": "Delegation abuse",
+      "remediation": "Remove unneeded delegation; mark sensitive accounts 'not delegated'.",
+      "attack": "T1558/T1134",
+      "active_check": false,
+      "timestamp": "",
+      "novelty": "KNOWN_PATTERN"
+    },
+    {
+      "id": "RT-ADCS-597b",
+      "title": "AD CS enterprise CA present: ca.corp",
+      "severity": "HIGH",
+      "confidence": "LIKELY",
+      "category": "ADCS",
+      "host": "DC01",
+      "port": null,
+      "source": "rt-adenum",
+      "description": "AD CS enterprise CA present: ca.corp",
+      "evidence": "AD CS enterprise CA present: ca.corp",
+      "impact": "Steal/forge certificates",
+      "remediation": "Fix template flags; require manager approval; restrict enroll.",
+      "attack": "T1649",
+      "active_check": false,
+      "timestamp": "",
+      "novelty": "KNOWN_PATTERN"
+    },
+    {
+      "id": "RT-AD-7873",
+      "title": "Kerberoastable user: svc_sql (SPN set)",
+      "severity": "HIGH",
+      "confidence": "LIKELY",
+      "category": "AD",
+      "host": "DC01",
+      "port": null,
+      "source": "rt-adenum",
+      "description": "Kerberoastable user: svc_sql (SPN set)",
+      "evidence": "Kerberoastable user: svc_sql (SPN set)",
+      "impact": "Kerberoasting",
+      "remediation": "Use (g)MSAs / 25+ char service-account passwords; AES-only; monitor 4769.",
+      "attack": "T1558.003",
+      "active_check": false,
+      "timestamp": "",
+      "novelty": "KNOWN_PATTERN"
+    },
+    {
+      "id": "RT-AD-21bb",
+      "title": "ms-DS-MachineAccountQuota=10 - any user can add machine accounts",
+      "severity": "MEDIUM",
+      "confidence": "LIKELY",
+      "category": "AD",
+      "host": "DC01",
+      "port": null,
+      "source": "rt-adenum",
+      "description": "ms-DS-MachineAccountQuota=10 - any user can add machine accounts",
+      "evidence": "ms-DS-MachineAccountQuota=10 - any user can add machine accounts",
+      "impact": "",
+      "remediation": "",
+      "attack": "",
+      "active_check": false,
+      "timestamp": "",
+      "novelty": "KNOWN_PATTERN"
+    },
+    {
+      "id": "RT-CLOUD-ba70",
+      "title": "Azure AD Connect (ADSync) service present on THIS host - tier-0",
+      "severity": "HIGH",
+      "confidence": "LIKELY",
+      "category": "CLOUD",
+      "host": "SYNC01",
+      "port": null,
+      "source": "Invoke-RTCloudEnum",
+      "description": "Azure AD Connect (ADSync) service present on THIS host - tier-0",
+      "evidence": "Azure AD Connect (ADSync) service present on THIS host - tier-0",
+      "impact": "",
+      "remediation": "",
+      "attack": "",
+      "active_check": false,
+      "timestamp": "",
+      "novelty": "KNOWN_PATTERN"
+    },
+    {
+      "id": "RT-WIN-BACKUP-NTDS-3e6",
+      "rule_id": "RT-WIN-BACKUP-NTDS",
+      "title": "Backup/Restore privilege on a domain-reachable host -> NTDS/hive dump",
+      "severity": "HIGH",
+      "confidence": "POTENTIAL",
+      "novelty": "CORRELATED_PATTERN",
+      "category": "Windows Privilege Escalation",
+      "host": "WS01",
+      "source": "correlation:windows.json",
+      "description": "A backup/restore privilege co-occurs with domain-sensitive context. Chain: read SAM/SYSTEM (or NTDS.dit on a DC) via the privilege -> secretsdump offline -> credentials.",
+      "impact": "SeBackupPrivilege lets a non-admin read any file (SAM/SYSTEM, or NTDS.dit on a DC) -> offline secret extraction -> domain credentials.",
+      "remediation": "Remove SeBackup/SeRestore from non-tier-0 principals; monitor volume-shadow and raw-hive reads.",
+      "evidence": [
+        "RT-CRED-035c"
+      ],
+      "attack_path": [],
+      "active_check": false,
+      "timestamp": "",
+      "attack": "T1003.002"
+    },
+    {
+      "id": "RT-AD-DELEG-UNUSUAL-cdd",
+      "rule_id": "RT-AD-DELEG-UNUSUAL",
+      "title": "Unusual delegation + credential-exposure combination",
+      "severity": "HIGH",
+      "confidence": "POTENTIAL",
+      "novelty": "RESEARCH_CANDIDATE",
+      "category": "Active Directory",
+      "host": "DC01",
+      "source": "correlation:ad.json",
+      "description": "Delegation and a credential-exposure primitive co-occur on the same host. The combination is worth manual review as an unrecognized attack path.",
+      "impact": "Delegation combined with a nearby credential-read primitive can create an unexpected privilege boundary crossing that is not captured by a single-finding detection.",
+      "remediation": "Treat delegation hosts as tier-0; remove nearby credential-read exposure; validate the delegation target set.",
+      "evidence": [
+        "RT-AD-8f89",
+        "RT-AD-7873"
+      ],
+      "attack_path": [],
+      "active_check": false,
+      "timestamp": "",
+      "attack": "T1558/T1134"
+    },
+    {
+      "id": "RT-AD-UNCONSTRAINED-COERCE-1ea",
+      "rule_id": "RT-AD-UNCONSTRAINED-COERCE",
+      "title": "Unconstrained delegation + coercion path to Domain Admin",
+      "severity": "HIGH",
+      "confidence": "POTENTIAL",
+      "novelty": "CORRELATED_PATTERN",
+      "category": "Active Directory",
+      "host": "DC01",
+      "source": "correlation:ad.json",
+      "description": "Unconstrained delegation observed. Chain: coerce a privileged machine (e.g. a DC) to auth -> capture its TGT on the delegation host -> DCSync. End impact: Domain Admin.",
+      "impact": "A host with unconstrained delegation that can be made to authenticate (PetitPotam/PrinterBug/DFSCoerce) yields a DC TGT -> DCSync -> Domain Admin.",
+      "remediation": "Remove unconstrained delegation; patch/disable coercion RPCs (MS-EFSRPC/MS-RPRN); mark DCs 'Account is sensitive and cannot be delegated'.",
+      "evidence": [
+        "RT-AD-8f89"
+      ],
+      "attack_path": [],
+      "active_check": false,
+      "timestamp": "",
+      "attack": "T1558/T1134"
+    },
+    {
+      "id": "RT-AD-ESC8-RELAY-87d",
+      "rule_id": "RT-AD-ESC8-RELAY",
+      "title": "AD CS present + relayable auth -> ESC8 web-enrollment relay",
+      "severity": "HIGH",
+      "confidence": "POTENTIAL",
+      "novelty": "CORRELATED_PATTERN",
+      "category": "Active Directory",
+      "host": "DC01",
+      "source": "correlation:ad.json",
+      "description": "AD CS enterprise CA co-occurs with a relayable/coercible authentication condition. Review for ESC8 (web-enrollment NTLM relay) to a domain-controller certificate.",
+      "impact": "An enterprise CA plus a coercible/relayable auth path enables ESC8: relay a coerced DC to the CA web-enrollment endpoint, obtain a DC certificate, then TGT -> DCSync.",
+      "remediation": "Enable EPA + require HTTPS on CA web enrollment; enforce SMB/LDAP signing; disable NTLM where possible; patch coercion RPCs.",
+      "evidence": [
+        "RT-AD-8f89",
+        "RT-ADCS-597b"
+      ],
+      "attack_path": [],
+      "active_check": false,
+      "timestamp": "",
+      "attack": "T1649"
+    },
+    {
+      "id": "RT-CLOUD-AADCONNECT-HYBRID-43b",
+      "rule_id": "RT-CLOUD-AADCONNECT-HYBRID",
+      "title": "AAD Connect sync server -> on-prem <-> cloud identity pivot",
+      "severity": "HIGH",
+      "confidence": "POTENTIAL",
+      "novelty": "CORRELATED_PATTERN",
+      "category": "Hybrid Identity",
+      "host": "SYNC01",
+      "source": "correlation:cloud.json",
+      "description": "Azure AD Connect (ADSync) present. Chain: compromise the sync host -> extract MSOL_/sync creds -> DCSync on-prem and/or manipulate cloud identities. End impact: on-prem + cloud identity pivot.",
+      "impact": "An AAD Connect sync server is tier-0: its MSOL_/sync account typically holds directory-replication rights (DCSync on-prem) and the sync bridges on-prem AD and Entra, enabling cross-boundary identity compromise.",
+      "remediation": "Treat the AAD Connect host as a Domain Controller (tier-0); restrict logon; rotate the MSOL_ account; monitor ADSync DB access.",
+      "evidence": [
+        "RT-CLOUD-ba70"
+      ],
+      "attack_path": [],
+      "active_check": false,
+      "timestamp": "",
+      "attack": "T1003.006"
+    }
+  ],
+  "graph": {
+    "nodes": {
+      "you": {
+        "id": "you",
+        "type": "Identity",
+        "label": "current principal",
+        "props": {}
+      },
+      "Service:WS01:RT-PRIV-71c0": {
+        "id": "Service:WS01:RT-PRIV-71c0",
+        "type": "Service",
+        "label": "service on WS01",
+        "props": {
+          "host": "WS01",
+          "finding": "RT-PRIV-71c0"
+        }
+      },
+      "Account:SYSTEM": {
+        "id": "Account:SYSTEM",
+        "type": "Account",
+        "label": "SYSTEM",
+        "props": {
+          "privileged": true
+        }
+      },
+      "Computer:DC01:RT-AD-8f89": {
+        "id": "Computer:DC01:RT-AD-8f89",
+        "type": "Computer",
+        "label": "computer on DC01",
+        "props": {
+          "host": "DC01",
+          "finding": "RT-AD-8f89"
+        }
+      },
+      "Account:Domain Admin": {
+        "id": "Account:Domain Admin",
+        "type": "Account",
+        "label": "Domain Admin",
+        "props": {
+          "privileged": true
+        }
+      },
+      "Credential:DC01:RT-AD-7873": {
+        "id": "Credential:DC01:RT-AD-7873",
+        "type": "Credential",
+        "label": "service ticket on DC01",
+        "props": {
+          "host": "DC01",
+          "finding": "RT-AD-7873"
+        }
+      },
+      "Account:service account": {
+        "id": "Account:service account",
+        "type": "Account",
+        "label": "service account",
+        "props": {
+          "privileged": true
+        }
+      },
+      "user:USER_A": {
+        "id": "user:USER_A",
+        "type": "User",
+        "label": "USER_A (low priv)",
+        "props": {}
+      },
+      "group:GROUP_A": {
+        "id": "group:GROUP_A",
+        "type": "Group",
+        "label": "GROUP_A",
+        "props": {}
+      },
+      "computer:COMPUTER_A": {
+        "id": "computer:COMPUTER_A",
+        "type": "Computer",
+        "label": "COMPUTER_A",
+        "props": {}
+      },
+      "service:SERVICE_A": {
+        "id": "service:SERVICE_A",
+        "type": "Service",
+        "label": "SERVICE_A",
+        "props": {}
+      },
+      "account:ADMIN_A": {
+        "id": "account:ADMIN_A",
+        "type": "Account",
+        "label": "Domain Admin ADMIN_A",
+        "props": {
+          "privileged": true
+        }
+      }
+    },
+    "edges": [
+      {
+        "src": "you",
+        "dst": "Service:WS01:RT-PRIV-71c0",
+        "type": "CAN_WRITE",
+        "props": {
+          "finding": "RT-PRIV-71c0",
+          "confidence": "LIKELY"
+        }
+      },
+      {
+        "src": "Service:WS01:RT-PRIV-71c0",
+        "dst": "Account:SYSTEM",
+        "type": "RUNS_AS",
+        "props": {
+          "finding": "RT-PRIV-71c0"
+        }
+      },
+      {
+        "src": "you",
+        "dst": "Computer:DC01:RT-AD-8f89",
+        "type": "DELEGATES_TO",
+        "props": {
+          "finding": "RT-AD-8f89",
+          "confidence": "LIKELY"
+        }
+      },
+      {
+        "src": "Computer:DC01:RT-AD-8f89",
+        "dst": "Account:Domain Admin",
+        "type": "GRANTS",
+        "props": {
+          "finding": "RT-AD-8f89"
+        }
+      },
+      {
+        "src": "you",
+        "dst": "Credential:DC01:RT-AD-7873",
+        "type": "CAN_READ",
+        "props": {
+          "finding": "RT-AD-7873",
+          "confidence": "LIKELY"
+        }
+      },
+      {
+        "src": "Credential:DC01:RT-AD-7873",
+        "dst": "Account:service account",
+        "type": "GRANTS",
+        "props": {
+          "finding": "RT-AD-7873"
+        }
+      },
+      {
+        "src": "user:USER_A",
+        "dst": "group:GROUP_A",
+        "type": "MEMBER_OF",
+        "props": {}
+      },
+      {
+        "src": "group:GROUP_A",
+        "dst": "computer:COMPUTER_A",
+        "type": "CAN_WRITE",
+        "props": {}
+      },
+      {
+        "src": "computer:COMPUTER_A",
+        "dst": "service:SERVICE_A",
+        "type": "RUNS_AS",
+        "props": {}
+      },
+      {
+        "src": "service:SERVICE_A",
+        "dst": "account:ADMIN_A",
+        "type": "CAN_IMPERSONATE",
+        "props": {}
+      }
+    ]
+  },
+  "attack_paths": [
+    {
+      "id": "RT-PATH-2490",
+      "start": "current principal",
+      "target": "SYSTEM",
+      "hops": 2,
+      "chain": "current principal --[CAN_WRITE]--> service on WS01 --[RUNS_AS]--> SYSTEM",
+      "confidence": "LIKELY"
+    },
+    {
+      "id": "RT-PATH-4354",
+      "start": "current principal",
+      "target": "Domain Admin",
+      "hops": 2,
+      "chain": "current principal --[DELEGATES_TO]--> computer on DC01 --[GRANTS]--> Domain Admin",
+      "confidence": "LIKELY"
+    },
+    {
+      "id": "RT-PATH-6fa5",
+      "start": "current principal",
+      "target": "service account",
+      "hops": 2,
+      "chain": "current principal --[CAN_READ]--> service ticket on DC01 --[GRANTS]--> service account",
+      "confidence": "LIKELY"
+    },
+    {
+      "id": "RT-PATH-0d0f",
+      "start": "USER_A (low priv)",
+      "target": "Domain Admin ADMIN_A",
+      "hops": 4,
+      "chain": "USER_A (low priv) --[MEMBER_OF]--> GROUP_A --[CAN_WRITE]--> COMPUTER_A --[RUNS_AS]--> SERVICE_A --[CAN_IMPERSONATE]--> Domain Admin ADMIN_A",
+      "confidence": "POTENTIAL"
+    }
+  ],
+  "research_candidates": [
+    {
+      "id": "RT-WIN-BACKUP-NTDS-3e6",
+      "rule_id": "RT-WIN-BACKUP-NTDS",
+      "title": "Backup/Restore privilege on a domain-reachable host -> NTDS/hive dump",
+      "severity": "HIGH",
+      "confidence": "POTENTIAL",
+      "novelty": "CORRELATED_PATTERN",
+      "category": "Windows Privilege Escalation",
+      "host": "WS01",
+      "source": "correlation:windows.json",
+      "description": "A backup/restore privilege co-occurs with domain-sensitive context. Chain: read SAM/SYSTEM (or NTDS.dit on a DC) via the privilege -> secretsdump offline -> credentials.",
+      "impact": "SeBackupPrivilege lets a non-admin read any file (SAM/SYSTEM, or NTDS.dit on a DC) -> offline secret extraction -> domain credentials.",
+      "remediation": "Remove SeBackup/SeRestore from non-tier-0 principals; monitor volume-shadow and raw-hive reads.",
+      "evidence": [
+        "RT-CRED-035c"
+      ],
+      "attack_path": [],
+      "active_check": false,
+      "timestamp": "",
+      "attack": "T1003.002"
+    },
+    {
+      "id": "RT-AD-DELEG-UNUSUAL-cdd",
+      "rule_id": "RT-AD-DELEG-UNUSUAL",
+      "title": "Unusual delegation + credential-exposure combination",
+      "severity": "HIGH",
+      "confidence": "POTENTIAL",
+      "novelty": "RESEARCH_CANDIDATE",
+      "category": "Active Directory",
+      "host": "DC01",
+      "source": "correlation:ad.json",
+      "description": "Delegation and a credential-exposure primitive co-occur on the same host. The combination is worth manual review as an unrecognized attack path.",
+      "impact": "Delegation combined with a nearby credential-read primitive can create an unexpected privilege boundary crossing that is not captured by a single-finding detection.",
+      "remediation": "Treat delegation hosts as tier-0; remove nearby credential-read exposure; validate the delegation target set.",
+      "evidence": [
+        "RT-AD-8f89",
+        "RT-AD-7873"
+      ],
+      "attack_path": [],
+      "active_check": false,
+      "timestamp": "",
+      "attack": "T1558/T1134"
+    },
+    {
+      "id": "RT-AD-UNCONSTRAINED-COERCE-1ea",
+      "rule_id": "RT-AD-UNCONSTRAINED-COERCE",
+      "title": "Unconstrained delegation + coercion path to Domain Admin",
+      "severity": "HIGH",
+      "confidence": "POTENTIAL",
+      "novelty": "CORRELATED_PATTERN",
+      "category": "Active Directory",
+      "host": "DC01",
+      "source": "correlation:ad.json",
+      "description": "Unconstrained delegation observed. Chain: coerce a privileged machine (e.g. a DC) to auth -> capture its TGT on the delegation host -> DCSync. End impact: Domain Admin.",
+      "impact": "A host with unconstrained delegation that can be made to authenticate (PetitPotam/PrinterBug/DFSCoerce) yields a DC TGT -> DCSync -> Domain Admin.",
+      "remediation": "Remove unconstrained delegation; patch/disable coercion RPCs (MS-EFSRPC/MS-RPRN); mark DCs 'Account is sensitive and cannot be delegated'.",
+      "evidence": [
+        "RT-AD-8f89"
+      ],
+      "attack_path": [],
+      "active_check": false,
+      "timestamp": "",
+      "attack": "T1558/T1134"
+    },
+    {
+      "id": "RT-AD-ESC8-RELAY-87d",
+      "rule_id": "RT-AD-ESC8-RELAY",
+      "title": "AD CS present + relayable auth -> ESC8 web-enrollment relay",
+      "severity": "HIGH",
+      "confidence": "POTENTIAL",
+      "novelty": "CORRELATED_PATTERN",
+      "category": "Active Directory",
+      "host": "DC01",
+      "source": "correlation:ad.json",
+      "description": "AD CS enterprise CA co-occurs with a relayable/coercible authentication condition. Review for ESC8 (web-enrollment NTLM relay) to a domain-controller certificate.",
+      "impact": "An enterprise CA plus a coercible/relayable auth path enables ESC8: relay a coerced DC to the CA web-enrollment endpoint, obtain a DC certificate, then TGT -> DCSync.",
+      "remediation": "Enable EPA + require HTTPS on CA web enrollment; enforce SMB/LDAP signing; disable NTLM where possible; patch coercion RPCs.",
+      "evidence": [
+        "RT-AD-8f89",
+        "RT-ADCS-597b"
+      ],
+      "attack_path": [],
+      "active_check": false,
+      "timestamp": "",
+      "attack": "T1649"
+    },
+    {
+      "id": "RT-CLOUD-AADCONNECT-HYBRID-43b",
+      "rule_id": "RT-CLOUD-AADCONNECT-HYBRID",
+      "title": "AAD Connect sync server -> on-prem <-> cloud identity pivot",
+      "severity": "HIGH",
+      "confidence": "POTENTIAL",
+      "novelty": "CORRELATED_PATTERN",
+      "category": "Hybrid Identity",
+      "host": "SYNC01",
+      "source": "correlation:cloud.json",
+      "description": "Azure AD Connect (ADSync) present. Chain: compromise the sync host -> extract MSOL_/sync creds -> DCSync on-prem and/or manipulate cloud identities. End impact: on-prem + cloud identity pivot.",
+      "impact": "An AAD Connect sync server is tier-0: its MSOL_/sync account typically holds directory-replication rights (DCSync on-prem) and the sync bridges on-prem AD and Entra, enabling cross-boundary identity compromise.",
+      "remediation": "Treat the AAD Connect host as a Domain Controller (tier-0); restrict logon; rotate the MSOL_ account; monitor ADSync DB access.",
+      "evidence": [
+        "RT-CLOUD-ba70"
+      ],
+      "attack_path": [],
+      "active_check": false,
+      "timestamp": "",
+      "attack": "T1003.006"
+    }
+  ],
+  "anomalies": [],
+  "new_since_baseline": [],
+  "resolved_since_baseline": []
+}

@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EnumGod Dashboard</title>
+<!-- Static, offline, no dependencies. Drop one or more EnumGod analysis .json files
+     (from `eg_analyze.py --output-format json`) to aggregate findings across hosts/runs. -->
+<style>
+:root{--bg:#0f1419;--card:#171d26;--fg:#e6edf3;--mut:#8b98a5;--line:#2a3340;--crit:#ff3860;--high:#ff5c5c;--med:#ffb454;--low:#6cb6ff;--info:#6b7684;--res:#c77dff;--accent:#3fb950}
+@media (prefers-color-scheme:light){:root{--bg:#f6f8fa;--card:#fff;--fg:#1f2328;--mut:#656d76;--line:#d0d7de}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.5 ui-monospace,Menlo,Consolas,monospace;padding:22px 16px}
+.wrap{max-width:1180px;margin:0 auto}h1{font-size:20px;margin:0 0 4px}.sub{color:var(--mut);font-size:12px;margin:0 0 14px}
+#drop{border:2px dashed var(--line);border-radius:12px;padding:26px;text-align:center;color:var(--mut);cursor:pointer;margin-bottom:16px}
+#drop.hover{border-color:var(--accent);color:var(--fg)}
+.cards{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 16px;min-width:84px}
+.card .n{font-size:22px;font-weight:700}.card .l{color:var(--mut);font-size:11px;text-transform:uppercase}
+.c-crit .n{color:var(--crit)}.c-high .n{color:var(--high)}.c-med .n{color:var(--med)}.c-low .n{color:var(--low)}.c-info .n{color:var(--info)}.c-res .n{color:var(--res)}
+input[type=search]{width:100%;padding:8px 10px;background:var(--card);border:1px solid var(--line);border-radius:8px;color:var(--fg);margin:8px 0}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--mut);font-size:11px;text-transform:uppercase;cursor:pointer}
+td.sev{font-weight:700}.s-critical td.sev{color:var(--crit)}.s-high td.sev{color:var(--high)}.s-medium td.sev{color:var(--med)}.s-low td.sev{color:var(--low)}
+td.mut{color:var(--mut);white-space:nowrap}h2{font-size:15px;margin:22px 0 8px;border-bottom:1px solid var(--line);padding-bottom:6px}
+.pill{border:1px solid var(--line);border-radius:20px;padding:1px 8px;font-size:11px;color:var(--mut)}
+</style></head><body><div class="wrap">
+<h1>EnumGod Dashboard</h1>
+<p class="sub">Static &middot; offline &middot; aggregates <code>eg_analyze</code> JSON across hosts/runs. Nothing leaves your browser.</p>
+<div id="drop">Drop EnumGod analysis <b>.json</b> file(s) here, or click to choose</div>
+<input id="f" type="file" accept=".json,application/json" multiple hidden>
+<div id="out" hidden>
+  <div class="cards" id="cards"></div>
+  <input id="q" type="search" placeholder="filter findings (host, id, text, severity, module)…">
+  <h2>Attack paths (<span id="pn">0</span>)</h2><div id="paths"></div>
+  <h2>Research candidates (<span id="rn">0</span>)</h2><div id="research"></div>
+  <h2>Findings (<span id="fn">0</span>)</h2>
+  <table><thead><tr><th data-k="id">ID</th><th data-k="severity">Sev</th><th data-k="confidence">Conf</th><th data-k="novelty">Novelty</th><th data-k="source">Module</th><th data-k="host">Host</th><th data-k="title">Finding</th></tr></thead><tbody id="rows"></tbody></table>
+</div>
+<script>
+const SEV={CRITICAL:0,HIGH:1,MEDIUM:2,LOW:3,INFO:4};
+let F=[],P=[],R=[],sortK="severity",sortAsc=true;
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const drop=document.getElementById('drop'),fi=document.getElementById('f');
+drop.onclick=()=>fi.click();
+['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('hover')}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('hover')}));
+drop.addEventListener('drop',ev=>load(ev.dataTransfer.files));
+fi.addEventListener('change',()=>load(fi.files));
+function load(files){let n=files.length,done=0;[...files].forEach(file=>{const r=new FileReader();r.onload=()=>{try{ingest(JSON.parse(r.result))}catch(e){alert('Bad JSON: '+file.name)}if(++done===n)render()};r.readAsText(file)})}
+function ingest(d){const seen=new Set(F.map(x=>x.id+'@'+x.host));(d.findings||[]).forEach(x=>{const k=x.id+'@'+x.host;if(!seen.has(k)){seen.add(k);F.push(x)}});P=P.concat(d.attack_paths||[]);R=R.concat(d.research_candidates||[])}
+function render(){
+  document.getElementById('out').hidden=false;
+  const c={CRITICAL:0,HIGH:0,MEDIUM:0,LOW:0,INFO:0};F.forEach(f=>c[f.severity]=(c[f.severity]||0)+1);
+  const hosts=new Set(F.map(f=>f.host)).size;
+  document.getElementById('cards').innerHTML=
+    card('c-crit',c.CRITICAL,'Critical')+card('c-high',c.HIGH,'High')+card('c-med',c.MEDIUM,'Medium')+
+    card('c-low',c.LOW,'Low')+card('c-info',c.INFO,'Info')+card('',hosts,'Hosts')+card('c-res',R.length,'Research');
+  document.getElementById('pn').textContent=P.length;document.getElementById('rn').textContent=R.length;
+  document.getElementById('paths').innerHTML=P.length?('<ul>'+P.map(p=>`<li><b>${esc(p.start)}</b> &rarr; <b>${esc(p.target)}</b> <span class="pill">${p.hops} hop(s) &middot; ${esc(p.confidence)}</span><br><span class="mut">${esc(p.chain)}</span></li>`).join('')+'</ul>'):'<p class="sub">none</p>';
+  document.getElementById('research').innerHTML=R.length?('<ul>'+R.map(r=>`<li><b>${esc(r.id)}</b> ${esc(r.title||'')} <span class="pill">${esc(r.novelty||'')}</span><br><span class="mut">${esc(r.description||'')}</span></li>`).join('')+'</ul>'):'<p class="sub">none</p>';
+  rows();
+}
+function card(cls,n,l){return `<div class="card ${cls}"><div class="n">${n}</div><div class="l">${l}</div></div>`}
+function rows(){
+  const q=(document.getElementById('q').value||'').toLowerCase();
+  let r=F.filter(f=>!q||JSON.stringify(f).toLowerCase().includes(q));
+  r.sort((a,b)=>{let x=a[sortK],y=b[sortK];if(sortK==='severity'){x=SEV[a.severity]??9;y=SEV[b.severity]??9}x=''+x;y=''+y;return (x<y?-1:x>y?1:0)*(sortAsc?1:-1)});
+  document.getElementById('fn').textContent=r.length;
+  document.getElementById('rows').innerHTML=r.map(f=>`<tr class="s-${(f.severity||'').toLowerCase()}"><td class="mut">${esc(f.id)}</td><td class="sev">${esc(f.severity)}</td><td class="mut">${esc(f.confidence)}</td><td class="mut">${esc(f.novelty||'')}</td><td class="mut">${esc(f.source||'')}</td><td class="mut">${esc(f.host)}</td><td>${esc(f.title||f.description||'')}</td></tr>`).join('');
+}
+document.getElementById('q').addEventListener('input',rows);
+document.querySelectorAll('th[data-k]').forEach(th=>th.onclick=()=>{const k=th.dataset.k;sortAsc=(sortK===k)?!sortAsc:true;sortK=k;rows()});
+</script>
+<p class="sub" style="margin-top:22px">EnumGod &middot; author Jeet Ramoliya &middot; authorized use only</p>
+</div></body></html>

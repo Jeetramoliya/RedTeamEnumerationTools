@@ -1,0 +1,40 @@
+name: "EnumGod Analysis"
+description: "Run the EnumGod analysis engine over findings.json and emit HTML/JSON/SARIF."
+author: "Jeet Ramoliya"
+branding:
+  icon: "shield"
+  color: "red"
+inputs:
+  findings:
+    description: "Directory (or glob) containing EnumGod findings.json files."
+    required: false
+    default: "."
+  baseline:
+    description: "Optional prior merged JSON to diff against (new/resolved)."
+    required: false
+    default: ""
+  out:
+    description: "Output path prefix."
+    required: false
+    default: "enumgod"
+runs:
+  using: "composite"
+  steps:
+    - name: Run EnumGod analysis
+      shell: bash
+      run: |
+        BASE=""; [ -n "${{ inputs.baseline }}" ] && BASE="--baseline ${{ inputs.baseline }}"
+        python3 "${{ github.action_path }}/research/eg_analyze.py" "${{ inputs.findings }}" \
+          --out "${{ inputs.out }}" --output-format html,json,sarif $BASE || true
+    - name: Upload report artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: enumgod-report
+        path: ${{ inputs.out }}.*
+    # Optional: surface findings in the repo Security tab (needs `security-events: write`)
+    - name: Upload SARIF to code scanning
+      if: ${{ hashFiles(format('{0}.sarif', inputs.out)) != '' }}
+      continue-on-error: true
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.out }}.sarif
